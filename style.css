@@ -1,0 +1,23 @@
+
+table, td, tr {
+  border-collapse: collapse;
+  border: 1px solid black;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+  vertical-align: middle !important;
+}
+
+th { 
+  color: white !important;
+  background-color: #005e7d !important;
+  border-collapse: collapse;
+  border-bottom: 1px solid black;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+  vertical-align: middle !important;
+}
+
+tfoot, tr:nth-child(even) { 
+  background-color: #b5f0fd !important; 
+  vertical-align: middle !important;
+}
