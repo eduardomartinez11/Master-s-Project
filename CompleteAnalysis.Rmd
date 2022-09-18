@@ -1,0 +1,1684 @@
+---
+title: "Statistical Analysis of Life Expectancy and Community Health in the City of Chicago"
+subtitle: "MS Project Presentation"
+author: "Eduardo Martinez"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    code_folding: hide
+    theme: cerulean
+    css: style.css
+    df_print: paged
+  html_notebook:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    code_folding: hide
+    theme: cerulean
+    css: style.css
+---
+
+<hr>
+
+$\underline{\textbf{Section 0}}$
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+source("/Users/Eduardo/Desktop/R/MyFunctions.R")
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(scales)
+library(knitr)
+library(kableExtra)
+library(leaps)
+library(car)
+# library(performance)
+library(modelr)
+library(tidyverse)
+library(ggrepel)
+```
+
+
+```{r MyColors}
+mycolors <- c("#cc3333", "#3B00fb", "#737373", "#04551f", "#782ab6", "#daa500", 
+              "#753232", "#84e9ec", "#000000", "#00cd00", "#ff00c0", "#ffff00", 
+              "#f98b85", "#005e7d", "#babab1", "#0d987d", "#330066", "#856601", 
+              "#ff5000", "#66B0ff", "#685a4e", "#00ff99", "#ca9ec2", "#fbbb05", 
+              "#a11f48", "#5b09ba", "#2c2520", "#044111", "#fe9aaa", "#e0cd67")
+scales::show_col(mycolors, cex_label = 0.95)
+```
+
+
+
+
+```{r FullNames}
+DemNames <- c("Total Population", "% Male", "% Female", 
+              "% Non-Hispanic White", "% Non-Hispanic Black", 
+              "% Hispanic or Latino", "%  Asian or Pacific Islander", 
+              "% Children (0-17 years)", "% Young Adults (18-39 years)", 
+              "% Middle-Aged Adults (40-64 years)", "% Seniors (65 and older)")
+
+ACSNames <- c("Average Life Expectancy",                           # 2015-2019 5-Year Averages
+              "Number of Federally Qualified Health Centers",      # Total Counts 
+              "Median Household Income", "Per Capita Income",      # USD
+              "Poverty Rate",                           # % of Residents in Families Below Federal Poverty Level
+              "Unemployment Rate",                      # % of Residents >= 16 Actively Seeking Employment
+              "Preschool Enrollment",                              # % of Toddlers Ages 3-4 
+              "High School Graduation Rate",                       # % of Residents >= 25 
+              "College Graduation Rate",                           # % of Residents >= 25 
+              "Limited English Proficiency",                       # % of Residents >= 5
+              "Foreign Born", "Uninsured Rate",                    # % of Residents 
+              "Ambulatory Difficulty", "Cognitive Difficulty",         # % of Residents
+              "Hearing Difficulty", "Independent Living Difficulty",   # % of Residents
+              "Self Care Difficulty", "Vision Difficulty",             # % of Residents
+              "Food Stamps (SNAP)",                                # % of Household
+              "Public Assistance Income (Cash Welfare)",           # % of Household
+              "Households in Poverty Not Receiving SNAP",          # % of Households Below Federal Poverty Level
+              "Rent Burdened", "Severely Rent Burdened",           # % of Renter-Occupied Households 
+              "Single Parent Households",                          # % of Households 
+              "Vacant Housing",                                    # % of Housing Units
+              "Crowded Housing",                                   # % of Occupied Housing Units
+              "Economic Diversity Index",                          # Score Ranging Between 0-0.83
+              "Hardship Index")                                    # Score Ranging Between 0-100
+```
+
+<hr>
+
+# $\underline{\textbf{The Data}}$ {.tabset .tabset-pills}
+
+## $\textbf{Demographics}$ 
+
+```{r LoadDem}
+LoadDem <- read_csv("Data/CSV/Demographics.csv", show_col_types = F)
+DemDF <- cbind(LoadDem[,1:5], as_tibble(apply(LoadDem[,6:15], 2, function(x) (x / LoadDem$POP) * 100)))
+ChiDem <- DemDF[1,]
+CADem <- DemDF[-1,]
+```
+
+```{r DemStats}
+ChiDemStats <- tibble(Demographic = DemNames, Chicago = round(unlist(select(ChiDem, POP:Seniors)), 2))
+CADemStats <- sum.tab(CADem[,5:15], exclude=c("Var", "CV", "SD")) %>%
+  mutate(Demographic = DemNames) %>%
+  select(Demographic, Min:Max)
+```
+
+```{r}
+AllDemDF <- cbind(ChiDemStats, CADemStats[,-1]) %>%
+  mutate_if(.predicate = is.double, 
+            function(x) ifelse(
+              x > 1500, 
+              yes = paste("$\\boldsymbol{", format(round(x), big.mark = ",",  drop0trailing = T, scientific = F), "}$", sep = ""), 
+              no = paste("$\\boldsymbol{", format(x, scientific = F, nsmall = 2, trim = T), "}$", sep = "")
+              ))
+```
+
+```{r}
+kbl(AllDemDF, align = "lrrrrrrr", linesep = "", escape = F, 
+      col.names = paste("$\\underline{\\textbf{", names(AllDemDF), "}}$")) %>% 
+  
+  kable_styling(bootstrap_options = c("hover", "striped"), 
+                htmltable_class = "lightable-classic", 
+                html_font = "Courier", font_size = 15) %>%
+  
+  row_spec(0, align = "c", font_size = 16, extra_css = 'font-family: "serif;"') %>%
+  
+  column_spec(1, width = "32em", bold = T) %>%
+  column_spec(2:8, width = "7em") 
+```
+
+
+
+
+## $\textbf{Life Expectancy, FQHC, and ACS Data}$ 
+
+```{r LoadACS}
+LoadACS <- read_csv("Data/CSV/Main-Data.csv", show_col_types = F)
+
+CADF <- LoadACS[-1,]       # 77 CAs Only (Chicago Excluded)
+CA2 <- filter(CADF, Name != "Burnside" & Name != "Fuller Park")   # `CA2` Excludes Burnside and Fuller Park (Potential Outliers)  
+```
+
+
+```{r MeltCA}
+MeltCADF <- select(CADF, LE:HardshipIndex) %>% 
+  pivot_longer(cols = 1:28, names_to = "Variable", values_to = "Value") %>%
+  mutate(Variable = factor(Variable, levels = names(CADF)[-1:-3]))
+```
+
+```{r CABoxPlots, fig.height=9, fig.width=9}
+ggplot(data = MeltCADF, aes(x = Variable, y = Value)) +
+  
+  geom_boxplot(aes(fill = Variable), show.legend = F, 
+               color = ifelse(unique(MeltCADF$Variable) == "College", "#daa500", "black"),
+               outlier.color = "Red3", outlier.alpha = 0.55, 
+               outlier.size = rel(1.25), outlier.stroke = rel(1)) +
+  
+  facet_wrap(vars(Variable), scales = "free") +
+  
+  labs(title = "Box Plots for Each Variable Considered", x = NULL, y = NULL) +
+  
+  scale_fill_manual(values = mycolors) +
+  
+  scale_y_continuous(n.breaks = 4, labels = scales::comma) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 2, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(0.9), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        panel.grid.major.y = element_line(color = "grey78"), 
+        panel.grid.minor.y = element_line(color = "grey84"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.y = element_text(size = rel(0.95), color = "black"),
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank()
+        )
+```
+
+
+
+
+## $\textbf{Training and Test Set}$ 
+
+- There are two separate training sets. Training Set 1 includes Fuller Park and Burnside and Training Set 2 does not. 
+
+    + Note, all $n_2 = 45$ CAs in Training Set 2 are in Training Set 1 $(n_1 = 47)$.
+
+
+- There is only one Test Set since both potential outliers are in the Training Set.
+
+
+```{r}
+set.seed(9711)
+trainRows <- sample(x = c(1:36, 38:46, 48:77), size = 45, replace = F)
+```
+
+```{r}
+preTrainDF1 <- filter(CADF, GEOID %in% c(37, 47, trainRows))  
+trainDF1 <- preTrainDF1[c(which(preTrainDF1$GEOID %in% c(37, 47)), which(preTrainDF1$GEOID %in% trainRows)),]
+trainDF2 <- trainDF1[-1:-2,]                    # Selectng all 45 Ca except Burnside and Fuller Park
+testDF1 <- filter(CADF, GEOID %notin% c(37, 47, trainRows))
+
+n1a <- nrow(trainDF1) # n1a = 47 (CAs in Training Set 1)
+n2a <- nrow(trainDF2) # n2a = 45 (CAs in Training Set 1)
+n1b <- nrow(testDF1)  # n1b = 30 (CAs in Test Set 1)
+```
+
+
+# $\underline{\textbf{Full Model 1} \ \big(\boldsymbol{FM_1}\big) \ \ \textbf{vs} \ \ \textbf{Full Model 2} \ \big(\boldsymbol{FM_2}\big)}$ {.tabset .tabset-pills}
+
+<br>
+
+- I will briefly show that Fuller Park and Burnside are outliers that should be removed from the data set.    
+
+<hr>
+
+## $\textbf{Regression Summaries}$ {.tabset .tabset-pills}
+
+```{r}
+s.FM1 <- summary(FM1 <- lm(LE ~ ., data = trainDF1[-1:-3])) 
+s.FM2 <- summary(FM2 <- lm(LE ~ ., data = trainDF2[-1:-3])) 
+```
+
+### $\textsf{FM}_{\boldsymbol{1}}$
+
+```{r}
+kbl(s.Mod2LaTeX(s.FM1, label = "\\boldsymbol{FM_1}"), align = "lrrrc", linesep = "", escape = F) %>% 
+  
+  kable_styling(bootstrap_options = c("hover", "striped"), htmltable_class = "lightable-classic",
+                html_font = "Courier", font_size = 16, full_width = F) %>%
+  
+  row_spec(0, align = "c", font_size = 17, extra_css = 'font-family: "serif;"') %>%
+  
+  column_spec(1, width = "12em") %>%
+  column_spec(2:4, width = "10em") %>%
+  column_spec(5, width = "6em")
+```
+
+
+
+
+### $\textsf{FM}_{\boldsymbol{2}}$
+
+```{r}
+kbl(s.Mod2LaTeX(s.FM2, label = "\\boldsymbol{FM_2}"), 
+    align = "lrrrc", linesep = "", escape = F) %>% 
+  
+  kable_styling(bootstrap_options = c("hover", "striped"), htmltable_class = "lightable-classic",
+                html_font = "Courier", font_size = 15, full_width = F) %>%
+  
+  row_spec(0, align = "c", font_size = 16, extra_css = 'font-family: "serif;"') %>%
+  
+  column_spec(1, width = "12em") %>%
+  column_spec(2:4, width = "10em") %>%
+  column_spec(5, width = "6em")
+```
+
+
+
+
+## $\textbf{Related Data}$ {.tabset .tabset-pills}
+
+### $\textsf{FM}_{\boldsymbol{1}}$ 
+
+```{r}
+FM1.DF <- tibble(Index = 1:47, trainDF1[,2:4], 
+                 Fit = FM1$fitted.values, Residual = FM1$residuals, Std_Res = rstandard(FM1),
+                 Leverage = hatvalues(FM1), CooksD = cooks.distance(FM1)) 
+
+as_tibble(cbind(FM1.DF[,1:3], round(FM1.DF[,-1:-3], 3)))
+```
+
+
+
+
+### $\textsf{FM}_{\boldsymbol{2}}$ 
+
+```{r}
+FM2.DF <- tibble(Index = 1:45, trainDF2[,2:4], 
+                 Fit = FM2$fitted.values, Residual = FM2$residuals, Std_Res = rstandard(FM2),
+                 Leverage = hatvalues(FM2), CooksD = cooks.distance(FM2)) 
+
+as_tibble(cbind(FM2.DF[,1:3], round(FM2.DF[,-1:-3], 3)))
+```
+
+
+
+
+## $\textbf{Diagnostic Plots}$ {.tabset .tabset-pills}
+
+### $\underline{\textsf{Residuals vs. Fits}}$ {.tabset .tabset-pills}
+
+#### $\textsf{FM}_{\boldsymbol{1}}$
+
+```{r ResPlotFM1}
+FM1.RvF <- ggplot(FM1.DF, aes(x = Fit, y = Residual)) +
+  
+  geom_point(shape = 1, size = rel(3), color = "black") +
+
+  geom_abline(slope = 0, intercept = 0, color = "Red1", linetype = 2, size = rel(0.65), alpha = 0.75) +
+
+  stat_smooth(formula = y*(2/3) ~ x, method = "loess", se = F, color = "#3B00FB", size = rel(0.5), span = 0.8) +
+
+  geom_label_repel(aes(label = ifelse(Label == "FullerPk" | Label == "Burnside", Label,'')),
+                   nudge_x = -2, nudge_y = ifelse(FM1.DF$Label == "FullerPk", 0.75, -0.75),
+                   size = rel(3.75), box.padding = 0.3, label.padding = 0.3) +
+
+  labs(title = "Full Model 1  -  Residuals  vs.  Fitted Values", x = "Fitted Values", y = "Residuals") +
+  
+  scale_x_continuous(limits = c(65.6, 84.4), breaks = seq(65, 85, 5)) +
+  scale_y_continuous(limits = c(-1.9, 1.9), breaks = c(-2, -1, 0, 1, 2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(size = rel(1.25), face = "bold", family = "sans", 
+                                         margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(size = rel(1.25), face = "bold", family = "sans", 
+                                           margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+
+FM1.RvF
+```
+
+
+
+#### $\textsf{FM}_{\boldsymbol{2}}$
+
+```{r ResPlotFM2}
+FM2.RvF <- ggplot(FM2.DF, aes(x = Fit, y = Residual)) +
+  
+  geom_point(shape = 1, size = rel(3), color = "black") +
+  
+  geom_abline(slope = 0, intercept = 0, color = "Red1", linetype = 2, size = rel(0.65), alpha = 0.75) +
+  
+  stat_smooth(formula = y*(2/3) ~ x, method = "loess", se = F, color = "Green4", size = rel(0.5), span = 0.8) +
+  
+  labs(title = "Full Model 2  -  Residuals  vs.  Fitted Values", x = "Fitted Values", y = "Residuals") +
+  
+  scale_x_continuous(limits = c(65.6, 84.4), breaks = seq(65, 85, 5)) +
+  scale_y_continuous(limits = c(-1.9, 1.9), breaks = c(-2, -1, 0, 1, 2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "Green4", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(size = rel(1.25), face = "bold", family = "sans", 
+                                         margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(size = rel(1.25), face = "bold", family = "sans", 
+                                           margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+FM2.RvF
+```
+
+
+
+### $\underline{\textsf{Normal Q-Q Plot}}$ {.tabset .tabset-pills}
+
+```{r}
+# Used in all Models
+q.x <- qnorm(c(.25, .75))                 
+
+# Full Model 1 Calculations
+FM1.y <- quantile(FM1.DF$Std_Res, c(.25, .75)) 
+FM1.slope <- diff(FM1.y) / diff(q.x)
+FM1.int  <- FM1.y[1] - FM1.slope * q.x[1]
+FM1.q <- sort(rank(FM1.DF$Std_Res) - 0.5) / nrow(FM1.DF)
+FM1.theoQ = qnorm(FM1.q, mean = mean(FM1.DF$Std_Res), sd = sd(FM1.DF$Std_Res))
+FM1.qq <- tibble(Std_Res = sort(FM1.DF$Std_Res), TheoQ = FM1.theoQ)
+
+FM1.qqDF <- inner_join(FM1.DF, FM1.qq, by = "Std_Res") %>% 
+  select(Index:Std_Res, TheoQ, everything()) %>%
+  arrange(Std_Res)
+FM1.dist <- matrix(c(FM1.slope * FM1.qqDF$TheoQ + FM1.int, FM1.qqDF$Std_Res), ncol = 2)
+FM1.qqDF2 <- FM1.qqDF %>%
+  mutate(QQDist = apply(FM1.dist, 1, function(x) dist(x, method = "euclidean")))
+
+# Full Model 2 Calculations
+FM2.y <- quantile(FM2.DF$Std_Res, c(.25, .75)) 
+FM2.slope <- diff(FM2.y) / diff(q.x)
+FM2.int  <- FM2.y[1] - FM2.slope * q.x[1]
+FM2.q <- sort(rank(FM2.DF$Std_Res) - 0.5) / nrow(FM2.DF)
+FM2.theoQ = qnorm(FM2.q, mean = mean(FM2.DF$Std_Res), sd = sd(FM2.DF$Std_Res))
+FM2.qq <- tibble(Std_Res = sort(FM2.DF$Std_Res), TheoQ = FM2.theoQ)
+
+FM2.qqDF <- inner_join(FM2.DF, FM2.qq, by = "Std_Res") %>% 
+  select(Index:Std_Res, TheoQ, everything()) %>%
+  arrange(Std_Res)
+FM2.dist <- matrix(c(FM2.slope * FM2.qqDF$TheoQ + FM2.int, FM2.qqDF$Std_Res), ncol = 2)
+FM2.qqDF2 <- FM2.qqDF %>%
+  mutate(QQDist = apply(FM2.dist, 1, function(x) dist(x, method = "euclidean")))
+```
+
+
+#### $\textsf{FM}_{\boldsymbol{1}}$
+
+```{r}
+Xbounds1 <- max(abs(FM1.qqDF2$TheoQ))    # Did Not Use
+Ybounds1 <- max(abs(FM1.qqDF2$Std_Res))  # Did Not Use
+```
+
+```{r qqPlotFM1}
+FM1.qqPlot <- ggplot(FM1.qqDF2, aes(x = TheoQ, y = Std_Res)) +
+  
+  geom_abline(slope = FM1.slope, intercept = FM1.int, linetype = 1, size = rel(1.5), color = "#3B00FB", alpha=0.65) +
+  
+  geom_point(shape = 1, size = rel(4), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(abs(Std_Res) > 2 | QQDist > 0.5 | Label == "FullerPk" | Label == "Burnside", Label,'')), 
+    nudge_x=ifelse(FM1.qqDF2$Std_Res == max(FM1.qqDF2$Std_Res), -0.75, 0),
+    nudge_y=ifelse(FM1.qqDF2$Std_Res == min(FM1.qqDF2$Std_Res) | FM1.qqDF2$Std_Res == max(FM1.qqDF2$Std_Res), 1,-1.25),
+    size = rel(3.75), box.padding = 0.3, label.padding = 0.3) + 
+  
+  labs(title = "Full Model 1  -  QQ Plot", x = "Theoretical Quantiles", y = "Standardized Residuals") +
+
+  scale_x_continuous(limits = c(-2.9, 2.9), breaks = seq(-3, 3, 1)) +
+  scale_y_continuous(limits = c(-2.9, 2.9), breaks = seq(-3, 3, 1)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_blank(),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+FM1.qqPlot
+```
+
+
+
+#### $\textsf{FM}_{\boldsymbol{2}}$
+
+```{r}
+Xbounds2 <- max(abs(FM2.qqDF2$TheoQ))    # Did Not Use
+Ybounds2 <- max(abs(FM2.qqDF2$Std_Res))  # Did Not Use
+```
+
+```{r qqPlotFM2}
+FM2.qqPlot <- ggplot(FM2.qqDF2, aes(x = TheoQ, y = Std_Res)) +
+  
+  geom_abline(slope = FM2.slope, intercept = FM2.int, color = "Green4", linetype = 1, size = rel(1.5), alpha=0.65) +
+  
+  geom_point(shape = 1, size = rel(4), color = "black") +
+  
+  geom_label_repel(aes(label = ifelse(abs(Std_Res) > 2 | QQDist > 0.5, Label,'')), 
+                   nudge_y = -1.25, size = rel(3.75), box.padding = 0.3, label.padding = 0.3) + 
+  
+  labs(title = "Full Model 2  -  QQ Plot", x = "Theoretical Quantiles", y = "Standardized Residuals") +
+  
+  scale_x_continuous(limits = c(-2.9, 2.9), breaks = seq(-3, 3, 1)) +
+  scale_y_continuous(limits = c(-2.9, 2.9), breaks = seq(-3, 3, 1)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "Green4", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_blank(),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+
+FM2.qqPlot
+```
+
+
+
+### $\underline{\textsf{Point Leverage}}$ {.tabset .tabset-pills}
+
+\begin{align*}
+\underline{\text{Point Leverage}}: \boxed{~h_i  = H_{ii} = diag(H)\vphantom{\Big)}~} \ , & \ \ \text{where} \ \ H = \boldsymbol{X(X^T X)^{-1}X^T}
+\\ \\ \hline \\
+\underline{FM_1 - \text{Cutoff Value for Point Leverage}} & = \frac{2(p+1)}{n_1} = \frac{2(28)}{47} \approx 1.19 
+\\ \\
+\underline{FM_2 - \text{Cutoff Value for Point Leverage}} & = \frac{2(p+1)}{n_2} = \frac{2(28)}{45} \approx 1.2\bar{4}
+\end{align*}
+
+
+#### $\textsf{FM}_{\boldsymbol{1}}$
+
+- Notice, Fuller Park and Burnside have the highest leverage values overall.    
+
+- Although they don't exceed the $\textit{recommended}$ cutoff value, the fact that they are the two largest leverage points is concerning.
+
+
+```{r LevFM1}
+maxLevFM1 <- (2 * length(coef(FM1))) / nrow(FM1.DF)
+
+LevPlotFM1 <- ggplot(data = FM1.DF, aes(x = Index, y = Leverage)) +
+  
+  geom_hline(yintercept = maxLevFM1, color = "Red1", linetype = 2, size = rel(0.75)) +
+  
+  geom_linerange(aes(ymin = 0, ymax = Leverage), color = "#3B00FB", size = rel(0.9)) +
+  
+  geom_point(size = rel(2), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(Leverage > maxLevFM1 | Label == "FullerPk" | Label == "Burnside", Label,'')), 
+    nudge_y = 0.08, nudge_x = 0.15, size = rel(3.75), label.r = 0.5, box.padding = 0.3, label.padding = 0.3) + 
+  
+  geom_label_repel(
+    data = filter(FM1.DF, Index == 27), 
+    aes(x = 27.5, y = maxLevFM1, label = paste0("Cutoff Value = ", round(maxLevFM1, 5), collapse = "")),
+    color = "Red1", size = rel(3.75), family = "Arial", 
+    nudge_y = -0.095, nudge_x = 0, label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  labs(title = "FM 1  -  Point Leverage", x = "Index", y = "Leverage") +
+  
+  scale_x_continuous(limits = c(1, 47), breaks = seq(5, 85, 10)) +
+  scale_y_continuous(limits = c(0, 1.25), breaks = seq(0, 1.2, 0.2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+
+LevPlotFM1
+```
+
+
+
+#### $\textsf{FM}_{\boldsymbol{2}}$
+
+- Although by a small amount, removing Fuller Park and Burnside raised the cutoff value, 
+  yet no point has leverage greater than $0.9$ as demonstrated by Fuller Park and Burnside in $FM_1$.
+
+
+```{r LevFM2}
+maxLevFM2 <- (2 * length(coef(FM2))) / nrow(FM2.DF)
+
+LevPlotFM2 <- ggplot(data = FM2.DF, aes(x = Index, y = Leverage)) +
+  
+  geom_hline(yintercept = maxLevFM2, color = "Red1", linetype = 2, size = rel(0.75)) +
+  
+  geom_linerange(aes(ymin = 0, ymax = Leverage), color = "Green4", size = rel(0.9)) +
+  
+  geom_point(size = rel(2), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(Leverage > 0.8, Label,'')),
+    nudge_y = 0.15, nudge_x = 0, size = rel(3.75), label.r = 0.5, box.padding = 0.3, label.padding = 0.3) + 
+  
+  geom_label_repel(
+    data = filter(FM2.DF, Index == 23), 
+    aes(x = 34, y = maxLevFM2, label = paste0("Cutoff Value = ", round(maxLevFM2, 5), collapse = "")),
+    color = "Red1", size = rel(3.75), family = "Arial", 
+    nudge_y = -0.1, nudge_x = 0, label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  labs(title = "FM 2  -  Point Leverage", x = "Index", y = "Leverage") +
+  
+  scale_x_continuous(limits = c(1, 45), breaks = seq(5, 85, 10)) +
+  scale_y_continuous(limits = c(0, 1.25), breaks = seq(0, 1.2, 0.2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "Green4", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+
+LevPlotFM2
+```
+
+
+
+### $\underline{\textsf{Cook's Distance}}$ {.tabset .tabset-pills}
+
+
+\begin{align*}
+\underline{\text{Cook's Distance}}:
+  & \quad D_i  = \frac{r_i^2}{p+1} \cdot  \frac{h_i}{1-h_i} 
+\\ \\ \hline \\
+\underline{\text{Cutoff Value for Cook's Distance}}: 
+  & \quad  D_i > F\big(~p=0.5, ~~~ df_1 = p+1, ~~~ df_2 = n - p - 1 ~\big) 
+\\ \\
+\hookrightarrow\ \text{FM 1}: 
+  & \quad D_i > F\big(~p=0.5, ~~~ df_1 = 28, ~~~ df_2 = 19 ~\big) \approx 0.0466
+\\ \\
+\hookrightarrow\ \text{FM 2}: 
+  & \quad D_i > F\big(~p=0.5, ~~~ df_1 = 28, ~~~ df_2 = 17 ~\big) \approx 0.0504
+\end{align*}
+
+
+```{r}
+maxCookFM1 <- pf(0.5, 28,  19)
+maxCookFM2 <- pf(0.5, 28,  17)
+```
+
+
+> Note, the cutoff values are very small, and, thus, not very strict as so many points fall above the cutoff value.   
+> With this in mind, visual observations should be considered more heavily when identifying unusual points.
+
+
+#### $\textsf{FM}_{\boldsymbol{1}}$
+
+> Burnside is evidently highly influential as its Cook's Distance is more than double the second highest yielded by Englewood.  
+> There is evidence against Fuller Park being an outlier as its Cook's Distance does not stand out despite exceeding the recommended cutoff value.
+
+
+```{r CookFMPlot1}
+CookPlotFM1 <- ggplot(data = FM1.DF, aes(x = Index, y = CooksD)) +
+  
+  geom_hline(yintercept = maxCookFM1, color = "Red1", linetype = 2, size = rel(0.75)) +
+  
+  geom_linerange(aes(ymin = 0, ymax = CooksD), color = "#3B00FB", size = rel(0.9)) +
+  
+  geom_point(size = rel(2), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(CooksD > 0.15 | Label == "FullerPk" | Label == "Burnside", Label,'')), 
+    nudge_x = ifelse(FM1.DF$Label == "FullerPk" | FM1.DF$Label == "Chatham", 1.25 ,0), nudge_y = 0.085, 
+    size = rel(3.75), label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  geom_label_repel(
+    data = filter(FM1.DF, Index == 26),
+    aes(x = 29.25, y = maxCookFM1, label = paste0("Cutoff Value = ", round(maxCookFM1, 4), collapse = "")),
+    color = "Red1", size = rel(3.75), family = "Arial",
+    nudge_y = 0.3, nudge_x = 0, label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  labs(title = "FM 1  -  Cook's Distance", x = "Index", y = "Cook's Distance") +
+  
+  scale_x_continuous(limits = c(1, 47), breaks = seq(5, 85, 10)) +
+  scale_y_continuous(limits = c(0, 0.85), breaks = seq(0, 0.8, 0.2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+
+CookPlotFM1
+```
+
+
+
+#### $\textsf{FM}_{\boldsymbol{2}}$
+
+- Excluding Burnside and Fuller Park caused Hegewisch's Cook's Distance to increase from a small $0.0157$ to the largest value of $0.6262$ in FM 2.   
+
+- This means Hegewisch's Cook's Distance increased by a factor of $\approx 40$.   
+
+- Nonetheless, it is still not as high as Burnside's in FM 1.
+
+```{r CookFMPlot2}
+CookPlotFM2 <- ggplot(data = FM2.DF, aes(x = Index, y = CooksD)) +
+  
+  geom_hline(yintercept = maxCookFM2, color = "Red1", linetype = 2, size = rel(0.75)) +
+  
+  geom_linerange(aes(ymin = 0, ymax = CooksD), color = "Green4", size = rel(0.9)) +
+  
+  geom_point(size = rel(2), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(CooksD > 0.15 | Label == "FullerPk" | Label == "Burnside", Label,'')), 
+    nudge_x = 0, nudge_y = 0.085, size = rel(3.75), label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  geom_label_repel(
+    data = filter(FM2.DF, Index == 26),
+    aes(x = 27.33, y = maxCookFM2, label = paste0("Cutoff Value = ", round(maxCookFM2, 4), collapse = "")),
+    color = "Red1", size = rel(3.75), family = "Arial",
+    nudge_x = 0, nudge_y = 0.3, label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  labs(title = "FM 2  -  Cook's Distance", x = "Index", y = "Cook's Distance") +
+  
+  scale_x_continuous(limits = c(1, 45), breaks = seq(5, 85, 10)) +
+  scale_y_continuous(limits = c(0, 0.85), breaks = seq(0, 0.8, 0.2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "Green4", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier")
+        )
+        
+CookPlotFM2
+```
+
+
+
+## $\textbf{VIF}$ {.tabset .tabset-pills}
+
+$$
+\underline{\text{Variance Inflation Factor}}: 
+\quad \text{VIF}_{\boldsymbol{j}} = \frac{1}{1-R^{\boldsymbol{2}}_{\boldsymbol{j}}} \ , \quad j = 1 , \ldots , p
+$$
+
+
+- Recall, $\text{VIF}$ is a statistic used to detect collinearity among the predictor/independent variables.
+
+- $\text{VIF}_{\boldsymbol{j}}$ is calculated by regressing each predictor separately with all other predictors. 
+
+    + For instance, if $j = 1$, then $X_1$ is regressed with all other predictors: $X_1 = \beta_0 + \beta_2 X_2 + \dots + \beta_p X_p$
+  
+    + $R^{\boldsymbol{2}}_{\boldsymbol{j}}$ is the Multiple Correlation Coefficient of each separate model.
+
+- If a predictor yields a $\text{VIF} > 10$, then it is likely collinear with at least one other predictor.
+
+    + In FM 1, $22$ out of $27$ predictors have $\text{VIF} > 10$, this means collinearity is a serious issue. 
+
+    + Similarly, in FM 2, $21$ out of $27$ predictors have $\text{VIF} > 10$.
+
+
+```{r}
+`FM Predictors` <- names(vif(FM1))
+`FM1 VIF` <- vif(FM1)
+`FM2 VIF` <- vif(FM2)
+
+FM.VIF.DF <- tibble(`FM Predictors`, `FM1 VIF`, `FM2 VIF`) %>%
+  arrange(desc(`FM1 VIF` + `FM2 VIF`))
+```
+
+```{r}
+kbl(FM.VIF.DF, escape = F, linesep = "", align = "lcc", digits = 1,
+    col.names = c("$\\underline{\\boldsymbol{FM ~~ Predictors}}$", 
+                  "$\\underline{\\boldsymbol{FM_1 ~~ VIF}}$", 
+                  "$\\underline{\\boldsymbol{FM_2 ~~ VIF}}$")) %>%
+  
+  kable_styling(bootstrap_options = c("hover", "striped"), htmltable_class = "lightable-classic",
+                html_font = "Courier", font_size = 15, full_width = F) %>%
+  
+  row_spec(0, align = "c") %>%
+  
+  column_spec(1, width = "12em") %>%
+  column_spec(2:3, width = "9em")
+```
+
+
+
+
+# $\underline{\textbf{Best Subset Models}}$ {.tabset .tabset-pills}
+
+In order to prevent major collinearity issues, I considered statistical model selection criteria to identify candidates for the best subset models that perform well in both the Training Set and Test Set. 
+In other words, the best subset model is one that does not overfit the data. 
+Then, I will compare the best subset candidate models derived with and without Burnside and Fuller Park $(\textsf{Training Set #1} \ \ \textit{vs} \ \ \textsf{Training Set #2})$.
+
+- Let $n$ equal the sample size. 
+
+    + $n_1=45$ is the sample size of $\textsf{Training Set #1}$.
+    
+    + $n_2=47$ is the sample size of $\textsf{Training Set #1}$.
+
+- Let $p=$ the number of predictors in a model.
+
+- Let $b=$ the number of parameters/coefficients in a model (the model size).
+
+    + $b = p + 1$ as there is a cofficient for each parameter and an intercept for each model in this project
+
+<hr>
+
+## $\textbf{Selection Statistics}$ {.tabset .tabset-pills}
+
+```{r}
+SelectionStats <- tibble(
+  "$\\underline{\\boldsymbol{Selection ~~ Statistic}}$" = c(
+        "Adjusted Multiple Correlation Coefficient:", 
+        "Akaike Information Criterion:",
+        "Bayesian Information Criterion:",
+        "Bias Corrected AIC:", 
+        "Mallow's Statistic:"),
+  
+  "$\\underline{\\boldsymbol{Formula}}$" = c(
+        "$$\\boldsymbol{R^2_{adj} = 1 - \\frac{\\textbf{SSE} \\big/ (n-b)}{\\textbf{SST} \\big/ (n-1)}}$$", 
+        "$$\\boldsymbol{\\textbf{AIC} = n \\log\\big(\\textbf{SSE} \\big/ n \\big) + 2b}$$",
+        "$$\\boldsymbol{\\textbf{BIC} = n \\log\\big(\\textbf{SSE} \\big/ n \\big) + b \\log(n)}$$",
+        "$$\\boldsymbol{\\textbf{AIC}_c = \\textbf{AIC} + \\frac{2b(b+1)}{n-b+1}}$$", 
+        "$$\\boldsymbol{C_p = \\frac{\\textbf{SSE}_{_{RM}}}{\\hat{\\sigma}^{~2}_{_{FM}}} + (2b - n)}$$"))
+
+kbl(SelectionStats, align = "c", linesep = "", escape = F) %>%
+  
+  kable_styling(bootstrap_options = c("hover", "striped"), htmltable_class = "lightable-classic",
+                html_font = "Courier", font_size = 15, full_width = F) %>%
+  
+  row_spec(0, align = "c", font_size = 16) %>%
+  
+  column_spec(1, width = "20em", extra_css = 'font-family: "serif;"', bold = T) %>%
+  column_spec(2, width = "25em") %>%
+  footnote(general = "All $\\log() are \\ln()$, $b =$ # of Parameters in Model, $n =$ Sample Size",
+           footnote_as_chunk = T)
+```
+
+
+
+- Note, $R^2_{adj}$ is optimized when it is maximized. All other criteria are optimized when they are minimized.
+
+- In the formula for Mallow's Statistic, $\text{SSE}_RM$ and $\hat{\sigma}_{FM}$ denote the sum of squared errors in the reduced/subset model and the residual standard error of the full model, respectively.
+  
+    + Note, the residual standard error is being squared in the formula, so the new value is the variance of the residuals.
+
+- To find the subset models that optimize each criteria, I performed an exhaustive search using `regsubsets()` in R.
+
+- In Ordinary Least Squares, the best subset model of a given size also optimizes/minimizes MSE.
+  Then, of these best subset models of each size, the model size that optimizes each criteria is used.
+
+
+### (Skip Section)
+
+- The code in this sub-section contains was used to extract the models via complex for loops. 
+
+- No output is generated.
+
+```{r}
+BestEx1 <- regsubsets(x = as.matrix(select(trainDF1, FQHC:HardshipIndex)), y = trainDF1$LE, 
+                      method = "exhaustive", nvmax = 20, nbest = 1)
+S.BestEx1 <- summary(BestEx1)
+
+BestEx2 <- regsubsets(x = as.matrix(select(trainDF2, FQHC:HardshipIndex)), y = trainDF2$LE, 
+                      method = "exhaustive", nvmax = 20, nbest = 1)
+S.BestEx2 <- summary(BestEx2)
+```
+
+
+```{r}
+ModList1 <- getRegSSMods(BestEx1, df = trainDF1, y = trainDF1$LE)
+ModStats.DF1 <- UnpackModStats(ModList1, FM1)
+
+ModList2 <- getRegSSMods(BestEx2, df = trainDF2, y = trainDF2$LE)
+ModStats.DF2 <- UnpackModStats(ModList2, FM2)
+```
+
+
+## $\textbf{Statistic vs. Model Size}$ {.tabset .tabset-pills}
+
+- In the following plots, the value of each selection statistic for the best model of each size is shown. 
+
+- Only the trivial model containing only an intercept $\big(p=0 \rightarrow\ b=1\big)$ was omitted in order to make it easier to visualize when each statistic is optimized.
+
+### $\underline{\textsf{Training Set #1}}$
+
+```{r, include=FALSE, eval=FALSE, echo=FALSE}
+# PlotData1.1 <- select(ModStats.DF1, -c(IVs)) %>%
+#   pivot_longer(cols = 2:7, names_to = "Statistic", values_to = "Value") %>%
+#   mutate(Statistic = factor(Statistic, levels = c("MSE", "AdjR2", "AIC","BIC", "AICc", "Cp"))) %>%
+#   arrange(Statistic)
+# table(PlotData1$Statistic == PlotData1.1$Statistic)
+```
+
+
+```{r, fig.width=10, fig.height=7}
+# Melted/Gathered Data
+PlotData1 <- select(ModStats.DF1, -c(IVs)) %>% 
+  gather(Statistic, Value, -Size)
+
+# Facet Plots
+ggplot(data = PlotData1, aes(Size, Value)) +
+  
+  geom_line(aes(color = Statistic), size = rel(1.25), show.legend = F, alpha = 0.9) +
+  
+  geom_point(shape = 1, color = "black", stroke=rel(0.9), size = rel(2.25), show.legend = F, alpha = 0.9)  +
+  
+  facet_wrap(~Statistic, scales = "free") +
+  
+  labs(title = "Training Set #1") +
+  
+  scale_x_continuous(name = "Number of Parameters", limits = c(0, 21), breaks = seq(0, max(PlotData1$Size), 4)) +
+  scale_y_continuous(n.breaks = 6) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(1.35), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        axis.text = element_text(size = rel(1.25)), 
+        axis.title = element_text(size = rel(1.2), face = "bold"),
+        axis.title.y.left = element_blank(), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84")
+        ) 
+```
+
+
+
+
+### $\underline{\textsf{Training Set #2}}$
+
+```{r, fig.width=9, fig.height=6}
+# Melted/Gathered Data
+PlotData2 <- select(ModStats.DF2, -c(IVs)) %>% 
+  gather(Statistic, Value, -Size)
+
+# Facet Plots
+ggplot(data = PlotData2, aes(x = Size, y = Value)) +
+  
+  geom_line(aes(color = Statistic), size = rel(1.25), show.legend = F, alpha = 0.9) +
+  
+  geom_point(shape = 1, color = "black", stroke=rel(0.9), size = rel(2.25), show.legend = F, alpha = 0.9)  +
+  
+  facet_wrap(~Statistic, scales = "free", shrink = T) +
+  
+  geom_blank(data = filter(PlotData2, Size == 12),
+             aes(group = factor(Statistic), x = Size, y = c(0.05, 0.99, -19.5, 0.65, 0.5, -24)),
+             show.legend = F) +
+  
+  scale_x_continuous(name = "Number of Parameters", limits = c(0, 21), breaks = seq(0, max(PlotData2$Size), 4)) +
+  
+  scale_y_continuous(n.breaks = 6) +
+  
+  labs(title = "Training Set #2") +
+  
+  theme_bw() +
+  
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(1.35), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        axis.text = element_text(size = rel(1.25)), 
+        axis.title = element_text(size = rel(1.2), face = "bold"),
+        axis.title.y.left = element_blank(), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84")
+        ) 
+```
+
+
+
+## $\textbf{Final Candidate Models}$ {.tabset .tabset-pills}
+
+Recall, $\textsf{Training Set #1}$ includes Fuller Park and Burnside, while $\textsf{Training Set #2}$ excludes them.    
+Three candidate models were selected by each Training Set $\Longrightarrow\ 6$ candidate models total.
+
+- Let the $3$ models derived using $\textsf{Training Set #1}$ be denoted by $M_1, M_2, \ \text{and}\ M_3$, respectively.
+
+- Let the $3$ models derived using $\textsf{Training Set #2}$ be denoted by $H_1, H_2, \ \text{and}\ H_3$, respectively.
+
+```{r SubsetMods}
+s.M1 <- summary(M1 <- lm(LE ~ CogDif + College + ForeignB + HearDif + HS + IndLivDif + Poverty + SelfCarDif + Unemployment, 
+                         data = trainDF1))
+
+s.M2 <- summary(M2 <- lm(LE ~ CogDif + College + EconDivIndex + ForeignB + HearDif + IndLivDif + LimEngP + PerCap + Poverty + PovNoSNAP + Preschool + SelfCarDif + SevRentBurd, 
+                         data = trainDF1))
+
+s.M3 <- summary(M3 <- lm(LE ~ CogDif + College + CrowdedH + EconDivIndex + ForeignB + HearDif + IndLivDif + LimEngP + PerCap + Poverty + PovNoSNAP + Preschool + SelfCarDif + SevRentBurd, 
+                         data = trainDF1))
+
+s.H1 <- summary(H1 <- lm(LE ~ CogDif + College + CrowdedH + EconDivIndex + ForeignB + IndLivDif + LimEngP + PerCap + Poverty + SelfCarDif, 
+                         data = trainDF2))
+
+s.H2 <- summary(H2 <- lm(LE ~ CogDif + College + CrowdedH + EconDivIndex + ForeignB + IndLivDif + LimEngP + PerCap + Poverty + PovNoSNAP + SelfCarDif, 
+                         data = trainDF2))
+
+s.H3 <- summary(H3 <- lm(LE ~ CogDif + College + CrowdedH + EconDivIndex + ForeignB + IndLivDif + LimEngP + PerCap + Poverty + PovNoSNAP + Preschool + SelfCarDif, 
+                         data = trainDF2))
+```
+
+
+<hr>
+
+### $\underline{\textsf{Training Set #1}}$ {.tabset .tabset-pills}
+
+(1) $M_1:$ LE = CogDif + College + ForeignB + HearDif + HS + IndLivDif + Poverty + SelfCarDif + Unemployment
+
+    + Minimized $\text{AIC}_c, \ \text{BIC}, \ \text{and}\ C_p$
+    
+    + $b=10=p+1$
+
+(2) $M_2:$ LE = CogDif + College + EconDivIndex + ForeignB + HearDif + IndLivDif + LimEngP + PerCap + Poverty + PovNoSNAP + Preschool + SelfCarDif + SevRentBurd
+
+    + Minimized $\text{AIC}$
+    
+    + $b=14=p+1$
+
+(3) $M_3:$ LE = CogDif + College + CrowdedH + EconDivIndex + ForeignB + HearDif + IndLivDif + LimEngP + PerCap + Poverty + PovNoSNAP + Preschool + SelfCarDif + SevRentBurd
+
+    + Maximized $R^2_{adj}$
+    
+    + $b=15$
+
+
+<hr>
+
+### $\underline{\textsf{Training Set #2}}$ {.tabset .tabset-pills}
+
+(1) $H_1:$ LE = PerCap + Poverty + College + ForeignB + LimEngP + CogDif + IndLivDif + SelfCarDif + CrowdedH + EconDivIndex
+
+    + Minimized $\text{AIC}_c, \ \text{BIC}, \ \text{and}\ C_p$
+    
+    + $b=11=p+1$
+
+(2) $H_2:$ LE = PerCap + Poverty + College + ForeignB + LimEngP + CogDif + IndLivDif + SelfCarDif + CrowdedH + EconDivIndex + PovNoSNAP
+
+    + Minimized $\text{AIC}$
+    
+    + $b=12=p+1$
+
+(3) $H_3:$ LE = PerCap + Poverty + College + ForeignB + LimEngP + CogDif + IndLivDif + SelfCarDif + CrowdedH + EconDivIndex + PovNoSNAP + Preschool
+
+    + Maximized $R^2_{adj}$
+    
+    + $b=13$
+
+
+<hr>
+
+# $\underline{\textbf{Regression Analysis}}$ {.tabset .tabset-pills}
+
+## $\textbf{Key Hypotheses}$ {.tabset .tabset-pills}
+
+> $\boldsymbol{(1)}\ M_2$ and $M_3$ will overfit the data and perform much worse on the Test Set when compared to $M_1$.
+
+> $\boldsymbol{(2)}\ H_1$ will outperform $H_2$ and $H_3$ on the Test Set.
+
+> $\boldsymbol{(3)}\ H_1$ will perform $\textit{slightly}$ better overall than $M_1$ since Burnside and to a lesser extend Fuller Park are possible outliers.
+
+<hr>
+
+## $\textbf{Regression Summaries}$ {.tabset .tabset-pills}
+
+```{r}
+s.M1.DF <- s.Mod2LaTeX(s.M1, label = "\\boldsymbol{M_1}")
+s.M2.DF <- s.Mod2LaTeX(s.M2, label = "\\boldsymbol{M_2}")
+s.M3.DF <- s.Mod2LaTeX(s.M3, label = "\\boldsymbol{M_3}")
+
+s.H1.DF <- s.Mod2LaTeX(s.H1, label = "\\boldsymbol{H_1}")
+s.H2.DF <- s.Mod2LaTeX(s.H2, label = "\\boldsymbol{H_2}")
+s.H3.DF <- s.Mod2LaTeX(s.H3, label = "\\boldsymbol{H_3}")
+```
+
+
+
+
+```{r}
+s.M1DF2 <- rbind(s.M1.DF, c(" ", " ", " ", " ", " "), c(" ", " ", " ", " ", " "), c(" ", " ", " ", " ", " "), c(" ", " ", " ", " ", " "), c(" ", " ", " ", " ", " "))
+s.M2DF2 <- rbind(s.M2.DF, c(" ", " ", " ", " ", " "))
+
+kbl(cbind(s.M1DF2, " " = c(" "), s.M2DF2, " " = c(" "), s.M3.DF), escape = F, align = "lrrrcclrrrc", linesep = "") %>%
+  
+  kable_styling(bootstrap_options = c("hover", "striped"),
+                htmltable_class = "lightable-classic",
+                html_font = "Courier", 
+                font_size = 11, full_width = F) %>%
+  
+  column_spec(c(6,12), background = "blue", width = "0.5em") #, width = "2em", extra_css = "border-left:5pt solid yellow; border-right:5pt solid yellow") 
+```
+
+
+
+
+```{r}
+s.H1DF2 <- rbind(s.H1.DF, c(" ", " ", " ", " ", " "), c(" ", " ", " ", " ", " "))
+s.H2DF2 <- rbind(s.H2.DF, c(" ", " ", " ", " ", " "))
+
+kbl(cbind(s.H1DF2, " " = c(" "), s.H2DF2, " " = c(" "), s.H3.DF), escape = F, align = "lrrrcclrrrc", linesep = "") %>%
+  
+  kable_styling(bootstrap_options = c("hover", "striped"),
+                htmltable_class = "lightable-classic",
+                html_font = "Courier", 
+                font_size = 11, full_width = F) %>%
+  
+  column_spec(c(6,12), background = "blue", width = "0.5em") #, width = "2em", extra_css = "border-left:5pt solid yellow; border-right:5pt solid yellow") 
+```
+
+
+
+
+
+<hr>
+
+# $\underline{\textbf{Results}}$ {.tabset .tabset-pills}
+
+## $\textbf{Model Fitted Values & Predicted Values}$ {.tabset .tabset-pills}
+
+- Fitted values refer to the model fits on the training data used to train the model.
+
+- Predicted values refer to the model predictions when given new test data.
+
+<hr>
+
+### $\underline{\textsf{Training Set}} - \textsf{Life Expectancy vs. Fitted Values}$ {.tabset .tabset-pills}
+
+#### Tabulated Results (Skip This Section)
+
+```{r}
+# Training Set 1
+trainPredsM1 <- predict(object = M1, newdata = trainDF1)
+trainPredsM2 <- predict(object = M2, newdata = trainDF1)
+trainPredsM3 <- predict(object = M3, newdata = trainDF1)
+
+TrainFits1 <- trainDF1 %>% 
+  mutate(M1 = trainPredsM1, M2 = trainPredsM2, M3 = trainPredsM3) %>%
+  select(Label = Name, `Actual LE` = LE, M1, M2, M3, FQHC:HardshipIndex)
+
+# Training Set 2
+trainPredsH1 <- predict(object = H1, newdata = trainDF2)
+trainPredsH2 <- predict(object = H2, newdata = trainDF2)
+trainPredsH3 <- predict(object = H3, newdata = trainDF2)
+
+TrainFits2 <- trainDF2 %>% 
+  mutate(H1 = trainPredsH1, H2 = trainPredsH2, H3 = trainPredsH3) %>%
+  select(Label = Name, `Actual LE` = LE, H1, H2, H3, FQHC:HardshipIndex)
+```
+
+```{r}
+# Combined Fits
+FitsDF <- TrainFits1[1:2, 1:5] %>%
+  mutate(H1 = NA, H2 = NA, H3 = NA) %>%
+  rbind(cbind(TrainFits1[3:nrow(TrainFits1), 1:5], TrainFits2[3:5])) %>% 
+  mutate(Index = 1:47) %>%
+  select(Index, everything())
+
+FitLowBound <- as.numeric(apply(select(FitsDF, `Actual LE`:H3), 1, function(x) min(x, na.rm=T)))
+FitHighBound <- as.numeric(apply(select(FitsDF, `Actual LE`:H3), 1, function(x) max(x, na.rm=T)))
+
+FitsDF$Low <- floor(FitLowBound)
+FitsDF$High <- apply(tibble(High1 = round(FitHighBound) + 0.5, 
+                            High2 = round(FitHighBound + 0.5)), 
+                     1, function(x) min(x, na.rm=T))
+```
+
+
+```{r}
+cbind(FitsDF[,-1], round(select(trainDF1, FQHC:HardshipIndex), 2)) %>%
+  mutate_if(.predicate = is.numeric, .funs = function(x) round(x, 2)) 
+```
+
+
+
+
+
+
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+#### $\textsf{Facet Grid}$
+
+```{r, rows.print=7}
+FitPlotDF1 <- FitsDF %>% 
+  pivot_longer(cols = `Actual LE`:H3, names_to = "Model", values_to = "Fits") 
+TrainCAs1 <- unique(FitPlotDF1$Label)[1:24]
+TrainCAs2 <- unique(FitPlotDF1$Label)[25:47]
+```
+
+
+```{r FitPlot1, fig.width=10, fig.height=9}
+ggplot(data = filter(FitPlotDF1, Label %in% TrainCAs1, !is.na(Fits)), aes(x = Model, y = Fits)) +
+  
+  geom_linerange(aes(ymin = Low, ymax = Fits, color = Model), size = rel(2.5), alpha = 0.9) +
+  
+  geom_blank(aes(y = High), show.legend = F) +
+  
+  facet_wrap(vars(factor(Label, levels = TrainFits1$Label)), scales = "free_y", ncol = 5) +
+  
+  labs(title = "Actual Life Expectancy vs. Each Model's Fitted Values (Part 1)", x = NULL, y = NULL) +
+  
+  scale_color_manual(values = mycolors) +
+  
+  scale_y_continuous(breaks = seq(64, 85, 1)) +
+  
+  guides(color = guide_legend(nrow=1, label.position = "top",
+                              label.theme = element_text(family = "Courier", face = "bold", hjust = 0.5))) +  
+                              # keywidth = rel(3), margin = margin(l=20, r=-1, unit = "pt")
+  
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 2, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(0.85), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        panel.grid.major.y = element_line(color = "gray65"),
+        panel.grid.minor.y = element_line(color = "gray70"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.title = element_blank(),
+        axis.text.y = element_text(size = rel(1), color = "Black", family = "sans"),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "top",
+        legend.background = element_rect(color = "Black", fill = "gray90"),
+        legend.key.width = unit(2.7, "cm"),
+        legend.key.height= unit(0.5, "cm"),
+        legend.key = element_rect(fill = "White", color = "Black"),
+        legend.title = element_blank())
+```
+
+
+
+```{r FitPlot2, fig.width=10, fig.height=9}
+ggplot(data = filter(FitPlotDF1, Label %in% TrainCAs2), aes(x = Model, y = Fits)) +
+  
+  geom_linerange(aes(ymin = Low, ymax = Fits, color = Model),  size = rel(2.5), alpha = 0.9) +
+  
+  geom_blank(aes(y = High), show.legend = F) +
+  
+  facet_wrap(vars(factor(Label, levels = TrainFits2$Label)), scales = "free_y", ncol = 5) +
+  
+  labs(title = "Actual Life Expectancy vs. Each Model's Fitted Values (Part 2)", x = NULL, y = NULL) +
+  
+  scale_color_manual(values = mycolors) +
+  
+  scale_y_continuous(breaks = seq(64, 85, 1)) +
+  
+  guides(color = guide_legend(ncol = 7, label.position = "top", 
+                              label.theme = element_text(family = "Courier", face = "bold", hjust = 0.5))) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 2, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(0.85), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        panel.grid.major.y = element_line(color = "gray65"),
+        panel.grid.minor.y = element_line(color = "gray70"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.title = element_blank(),
+        axis.text.y = element_text(size = rel(1), color = "Black", family = "sans"),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "top",
+        legend.background = element_rect(color = "Black", fill = "gray90"),
+        legend.key.width = unit(2.7, "cm"),
+        legend.key.height = unit(0.5, "cm"),
+        legend.key = element_rect(fill = "White", color = "Black"),
+        legend.title = element_blank()
+        )
+```
+
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+### $\underline{\textsf{Test Set}} - \textsf{Life Expectancy vs. Predicted Values}$ {.tabset .tabset-pills}
+
+- Although there were two separate Training Sets, there is only one Test Set since both potential outliers $-$ Fuller Park and Burnside $-$ where in the $\textsf{Training Sets}$. 
+
+#### Tabulated Result (Skip This Section)
+
+```{r}
+# Test Set - Model Predictions
+testPredsM1 <- predict(object = M1, newdata = testDF1)
+testPredsM2 <- predict(object = M2, newdata = testDF1)
+testPredsM3 <- predict(object = M3, newdata = testDF1)
+testPredsH1 <- predict(object = H1, newdata = testDF1)
+testPredsH2 <- predict(object = H2, newdata = testDF1)
+testPredsH3 <- predict(object = H3, newdata = testDF1)
+```
+
+```{r}
+TestPredsDF1 <- testDF1 %>% 
+  mutate(Label = Name,  `Actual LE` = LE,
+         M1 = testPredsM1, M2 = testPredsM2, M3 = testPredsM3,
+         H1 = testPredsH1, H2 = testPredsH2, H3 = testPredsH3) %>%
+  mutate(
+    Low = floor(apply(tibble(`Actual LE`, M1, M2, M3, H1, H2, H3), 1, function(x) min(x, na.rm=T))),
+    High = apply(tibble(
+      High1 = round(apply(tibble(`Actual LE`, M1, M2, M3, H1, H2, H3), 1, function(x) max(x, na.rm=T))) + 0.5,
+      High2 = round(apply(tibble(`Actual LE`, M1, M2, M3, H1, H2, H3), 1, function(x) max(x, na.rm=T)) + 0.5)),
+      1, function(x) min(x, na.rm=T))) %>%
+  select(Label, `Actual LE`, M1:M3, H1:H3, Low, High, FQHC:HardshipIndex)
+
+TestPredsDF1 %>%
+  mutate_if(.predicate = is.numeric, .funs = function(x) round(x, 2)) 
+```
+
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+#### $\textsf{Facet Grid}$
+
+```{r}
+PredsPlotDF1 <- TestPredsDF1 %>% 
+  pivot_longer(cols = `Actual LE`:H3, names_to = "Model", values_to = "Preds") %>%
+  select(Label, Low, High, Model, Preds, everything())
+
+TestCAs <- unique(TestPredsDF1$Label)
+```
+
+```{r PredsPlot, fig.width=10, fig.height=11}
+ggplot(data = PredsPlotDF1, aes(x = Model, y = Preds)) +
+  
+  geom_linerange(aes(ymin = Low , ymax = Preds, color = Model),  
+                 show.legend = T, size = rel(2.5), alpha = 0.9) +
+  
+  geom_blank(aes(y = High), show.legend = F) +
+  
+  facet_wrap(vars(factor(Label, levels = TestCAs)), scales = "free_y", ncol = 5) +
+  
+  labs(title = "Actual Life Expectancy vs. Each Model's Predicted Values", x = NULL, y = NULL) +
+  
+  scale_color_manual(values = mycolors) +
+  
+  scale_y_continuous(breaks = seq(64, 85, 1), minor_breaks = seq(64.5, 85.5, 1)) +
+  
+  guides(color = guide_legend(ncol = 7, label.position = "top", 
+                              label.theme = element_text(family = "Courier", face = "bold", hjust = 0.5))) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 2, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(0.85), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        panel.grid.major.y = element_line(color = "gray65"),
+        panel.grid.minor.y = element_line(color = "gray70"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.title = element_blank(),
+        axis.text.y = element_text(size = rel(1), color = "Black", family = "sans"),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "top",
+        legend.background = element_rect(color = "Black", fill = "gray90"),
+        legend.key.width = unit(2.7, "cm"),
+        legend.key.height = unit(0.5, "cm"),
+        legend.key = element_rect(fill = "White", color = "Black"),
+        legend.title = element_blank()
+        )
+```
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+## $\textbf{Model Accuracy}$ {.tabset .tabset-pills}
+
+- In order to assess if any set of health indicators are better at predicting life expectancy than an alternative set, 
+  I modeled both $\textsf{Training Sets}$ with the predictors that were not used in any of the $6$ subset models.
+  
+- The accuracy of the $2$ Full Models $(FM_1, FM_2)$ is also included in the final results. .
+
+```{r}
+PredsMain <- unique(c(names(coef(M1))[-1], names(coef(M2))[-1], names(coef(M3))[-1], 
+                      names(coef(H1))[-1], names(coef(H2))[-1], names(coef(H3))[-1]))
+
+OtherTrainDF1 <- select(trainDF1, -c(all_of(PredsMain), GEOID)) %>%
+  mutate(Label = Name, Name = NULL) 
+OtherTrainDF2 <- select(trainDF2, -c(all_of(PredsMain), GEOID)) %>%
+  mutate(Label = Name, Name = NULL)
+OtherTestDF <- select(testDF1, -c(all_of(PredsMain), GEOID)) %>%
+  mutate(Label = Name, Name = NULL) 
+
+s.OM1 <- summary(OM1 <- lm(LE ~ ., data = OtherTrainDF1[-1]))
+s.OM2 <- summary(OM2 <- lm(LE ~ ., data = OtherTrainDF2[-1]))
+```
+
+
+### $\underline{\textsf{Other Models}}$
+
+```{r}
+s.OM1DF <- s.Mod2LaTeX(s.OM1, label = "OM_1")
+s.OM2DF <- s.Mod2LaTeX(s.OM2, label = "OM_2")
+
+kbl(cbind(s.OM1DF, " " = c(" "), s.OM2DF), escape = F, align = "lrrrllrrrl", linesep = "", valign = "c") %>%
+  
+  kable_styling(bootstrap_options = c("hover", "striped"),htmltable_class = "lightable-classic",
+                html_font = "Courier", font_size = 14, full_width = F) %>%
+  
+  row_spec(0, align = "c") %>%
+  column_spec(c(1:5, 7:11), width_min = "4em") %>%
+  column_spec(6, width = "2em", background = "blue") 
+```
+
+
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+### $\underline{\textsf{Accuracy Statistics}}$ {.tabset .tabset-pills}
+
+- Let $y_i$ denote the actual life expectancy given by the data, and $\hat{y}_i$ denote the fitted and predicted values by each model.
+
+#### $\textsf{Formulas and Mathematical Backfround}$
+
+I considered the following statistics when evaluating each model's accuracy and overall performance:
+
+(1) $\underline{\text{Mean Absolute Error (MAE)}}= {\displaystyle \frac{1}{n} \sum_{i=1}^n \left| y_i - \hat{y}_i \right|}$
+
+    + MAE is pretty straightforward to interpret. Its just the average distance between the true life expectancy and the model's regression line.
+    
+    + However, it has a major limitation: 
+      finding unique coefficients that minimize MAE is not as straightforward to calculate because its derivative is not defined at its extrema. 
+
+(2) $\underline{\text{Mean Squared Error (MSE)}}= {\displaystyle \frac{1}{n} \sum_{i=1}^n \left(y_i - \hat{y}_i \right)^2}$
+
+    + MSE is one the most common measures used to assess a model's accuracy.
+    
+    + The advantage MSE over MAE, is that it is easier to derive regression coefficients that minimize MSE because its derivative equals $0$ at its extrema.
+
+(3) $\underline{\text{Root Mean Squared Error (RMSE)}}= {\displaystyle \sqrt{\frac{1}{n} \sum_{i=1}^n \left(y_i - \hat{y}_i \right)^2} = \sqrt{\text{MSE}\phantom{\big)}}}$
+
+    + RMSE is very similar to MSE. 
+      
+    + But RMSE might be easier to interpret in this situation because taking the square root of squared errors should be on a similar scale to the actual life expectancy.
+      
+    + Mathematically, the logic is very intuitive: $\sqrt{X^2} = X$
+
+(4) $\underline{\text{Mean Absolute Percentage Error (MAPE)}}= {\displaystyle \frac{1}{n} \sum_{i=1}^n \left| \frac{y_i - \hat{y}_i}{y_i} \right|}$
+
+    + MAPE is useful because it provides a percentage accuracy for continous variables. 
+    
+    + It is easy to measure accuracy when a predictions is either right or wrong as in logistic regression.
+    
+    + However, model predictions on a continuous scale are $\textit{relatively close}$ with respect to the magnitude of the actual values.
+      That is why, the formula devides each residual by the true value. 
+    
+    + MAPE is also called the Mean Absollute Percentage Deviation (MAPD). 
+
+
+- Note, I did not use the statistic $\textsf{Mean Absolute Percentage Accuracy}$ this time because it is not a reliable statistic. 
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+
+#### $\textsf{Links to Relevant Resources}$
+
+- [Mean Absolute Percentage Error (MAPE)](https://www.statisticshowto.com/mean-absolute-percentage-error-mape/)
+
+- [Mean Squared Error](https://statisticsbyjim.com/regression/mean-squared-error-mse/)
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+
+### $\underline{\textsf{Model Accuracy Results}}$
+
+```{r}
+Models1 <- list(FM1, M1, M2, M3, OM1)
+Labels1 <- c("$\\boldsymbol{FM_1}$", "$\\boldsymbol{M_1}$", "$\\boldsymbol{M_2}$", "$\\boldsymbol{M_3}$", "$\\boldsymbol{OM_1}$")
+Models2 <- list(FM2, H1, H2, H3, OM2)
+Labels2 <- c("$\\boldsymbol{FM_2}$", "$\\boldsymbol{H_1}$", "$\\boldsymbol{H_2}$", "$\\boldsymbol{H_3}$", "$\\boldsymbol{OM_2}$")
+
+AllLabels <- c("$\\boldsymbol{FM_1}$", "$\\boldsymbol{FM_2}$", 
+               "$\\boldsymbol{M_1}$", "$\\boldsymbol{M_2}$", "$\\boldsymbol{M_3}$", 
+               "$\\boldsymbol{H_1}$", "$\\boldsymbol{H_2}$", "$\\boldsymbol{H_3}$", 
+               "$\\boldsymbol{OM_1}$", "$\\boldsymbol{OM_2}$")
+
+FinalAcc.DF <- rbind(ModAccLaTeX(ListOfModels = Models1, VectorOfLabels = Labels1, TrainSet = trainDF1, TestSet = testDF1),
+                     ModAccLaTeX(ListOfModels = Models2, VectorOfLabels = Labels2, TrainSet = trainDF2, TestSet = testDF1))  %>% 
+  arrange(factor(Model, levels = AllLabels))
+```
+
+
+```{r}
+kbl(FinalAcc.DF, booktabs = T, escape = F, align = "c", linesep = "") %>%
+  
+  kable_styling(bootstrap_options = c("hover", "striped"), htmltable_class = "lightable-classic",
+                html_font = "Courier", font_size = 14) %>%
+  
+  row_spec(0, background = "#005e7d", color = "White", bold = T, underline = T, align = "c", 
+           extra_css = 'font-family: sans; border-bottom: 3pt solid black; font-size: 14pt') %>%
+  
+  column_spec(1:2, background = "#84e9ec") %>%
+  column_spec(3:4, background = "#cc3333", color = "white") %>%
+  column_spec(5:6, background = "#66B0ff") %>%
+  column_spec(7:8, background = "#04551f", color = "white") %>%
+  column_spec(9:10, background = "#782ab6", color = "white")
+```
+
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+
+### $\underline{\textsf{Accuracy Plots}}$ {.tabset .tabset-pills}
+
+```{r}
+Labs1 <- c("FM1", "M1", "M2", "M3", "OM1")
+Labs2 <- c("FM2", "H1", "H2", "H3", "OM2")
+AllLabs <- c("FM1", "FM2", "M1", "M2", "M3", "H1", "H2", "H3", "OM1", "OM2")
+  
+AccDF1 <- rbind(ModAcc(ListOfModels = Models1, VectorOfLabels = Labs1, TrainSet = trainDF1, TestSet = testDF1),
+                ModAcc(ListOfModels = Models2, VectorOfLabels = Labs2, TrainSet = trainDF2, TestSet = testDF1)) %>% 
+  arrange(factor(Model, levels = AllLabs))
+
+TrainAccDF <- select(AccDF1, c(1,2, grep(pattern = "Training", names(AccDF1)))) %>%
+  pivot_longer(cols = 3:6, names_to = "Statistic", values_to = "Value") %>%
+  mutate(Statistic = gsub(x = Statistic, pattern = "Training ", replacement = "")) %>%
+  mutate(Model = factor(Model, levels = AllLabs),
+         Statistic = factor(Statistic, levels = c("MAE", "MSE", "RMSE", "MAPE")))
+
+TestAccDF <- select(AccDF1, c(1,2, grep(pattern = "Test", names(AccDF1)))) %>%
+  pivot_longer(cols = 3:6, names_to = "Statistic", values_to = "Value") %>%
+  mutate(Statistic = gsub(x = Statistic, pattern = "Test ", replacement = "")) %>%
+  mutate(Model = factor(Model, levels = AllLabs),
+         Statistic = factor(Statistic, levels = c("MAE", "MSE", "RMSE", "MAPE")))
+```
+
+
+
+
+
+#### $\underline{\textbf{Training Set}}$
+
+- Evidently, the other models $(OM_1 \ \& OM_2)$, which contained the $11$ predictors not selected by all other subset models, 
+  were the least accurate on the Training Set.
+  
+    + $OM_1$ performed slightly worse than $OM_2$. 
+      Recall, the only difference between $OM_1$ and $OM_2$ is that $OM_1$ contains the potential outlier, Fuller Park and Burnside, while $OM_2$ does not. 
+      
+    + However, the difference is relatively small given that both of these models yielded accuracy statistics that were twice as large as the next worst model $(M_1)$ on the training set. 
+      The only exception to this observation is the RMSE of $OM_2 = 1.658$, which was marginally less than two times larger the RMSE of $M_1 = 0.831$.
+  
+- It is not surprising the the Full Models performed the best on the Training Set as larger models tend to overfit the Training Set and perform poorly when given new data.
+
+- In the Training Set, all of my Key Hypotheses have been supported this far. 
+  Notice, for each accuracy statistic the models the included Fuller Park performed slightly worse than the associated model that did not contain these potential outliers.
+  
+    + This is more meaningul for the Full Models and the Other Models since they contained the same predictors. 
+      That is, everything else was held constant.
+    
+    + This suggest that Fuller Park and Burnside are influential data points. 
+    
+-  On the other hand, it is not very suprising that $H_1$ outperformed $M_1$ in every statistic because it contained an extra predictor. Not to mention, some predictors in $M_1$ are not in $H_1$ and vise verse.
+    
+- In contrast, it is surprising that $H_2$ performed about as well as $M_2$ overall because $M_2$ contained an additional $2$ predictors.
+    
+    + A similar trend is observed by $M_3$ and $H_3$.
+      
+
+
+```{r TrainAccPlot, fig.width=10, fig.height=9}
+ggplot(data = TrainAccDF) +
+  geom_col(aes(x = factor(Statistic, levels = c("MAE", "MSE", "RMSE", "MAPE")), y = Value, fill = factor(Model, levels = AllLabs)), 
+           position = "dodge", color ="black") +
+  
+  labs(title = "Performance on the Training Set", x = NULL, y = NULL) + 
+  scale_fill_manual(values = mycolors) +
+  guides(fill = guide_legend(nrow = 1, label.position = "top", label.theme = element_text(family = "Courier", face = "bold", hjust = 0.5) )) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", family = "Courier", size = rel(2.25)), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(size = rel(1.75), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(size = rel(1.75), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.5), face = "bold", family = "Courier"),
+        legend.position = "bottom",
+        legend.background = element_rect(color = "Black", fill = "gray90"),
+        legend.key.width = unit(1, "cm"),
+        legend.text = element_text(size = rel(1.75), face = "bold", family = "Courier", margin = margin(t=0, r=8, b=0, l=3)),
+        legend.key = element_rect(fill = "White", color = "Black"),
+        legend.title = element_blank())
+```
+
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+
+#### $\underline{\textbf{Test Set}}$
+
+- As expected, the Full Models performed the worst on the Test Set. 
+  
+    + This time, $FM_1$ outperformed $FM_2$, providing evidence against the proposed outleir Fuller Park and Burnside.
+    
+- Unexpectedly, the Other Models performed the best on the Test Set. 
+
+    + For these models, $OM_2$ still slightly outperformed $OM_1$.
+    
+- Among the subset models selected using statistical criteria, there is no clear best model on the Test Set. 
+  
+    + With this in mind, $M_1$ yielded the lowest MAE and MAPE, while $H_1$ yielded the lowest MSE and RMSE. 
+    
+
+```{r TestAccPlot, fig.width=9, fig.height=6}
+ggplot(data = TestAccDF) +
+  geom_col(aes(x = factor(Statistic, levels = c("MAE", "MSE", "RMSE", "MAPE")), y = Value, 
+               fill = factor(Model, levels = c("FM1", "FM2", "M1", "M2", "M3", "H1", "H2", "H3", "OM1", "OM2"))), 
+           position = "dodge", color ="black") +
+  
+  scale_fill_manual(values = mycolors) +
+  
+  labs(title = "Performance on the Test Set", x = NULL, y =NULL) + 
+  
+  guides(fill = guide_legend(nrow = 1, label.position = "top", 
+                              label.theme = element_text(family = "Courier", face = "bold", hjust = 0.5) 
+                              )) +
+  
+  theme_bw() +
+  
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", family = "Courier", size = rel(2.25)), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(size = rel(1.75), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(size = rel(1.75), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.5), face = "bold", family = "Courier"),
+        legend.position = "bottom",
+        legend.background = element_rect(color = "Black", fill = "gray90"),
+        legend.key.width = unit(1, "cm"),
+        legend.text = element_text(size = rel(1.75), face = "bold", family = "Courier",  margin = margin(t=0, r=8, b=0, l=3)),
+        legend.key = element_rect(fill = "White", color = "Black"),
+        legend.title = element_blank()
+        )
+```
+
+
+
+
+<br>
+<hr>
+<br>
+<br>
+<hr>
+<br>
+<hr>
+<br>
+
+
+
+

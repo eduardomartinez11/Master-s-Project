@@ -1,0 +1,1187 @@
+---
+title: "Code Appendix"
+author: "Eduardo Martinez"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    latex_engine: xelatex
+  html_notebook:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+latex_engine: xelatex
+geometry: margin=1.5cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "", eval = FALSE, class.source = "numberLines")
+```
+
+```{r, include=FALSE, echo=FALSE}
+# col2rgb("#3B00FB") / 251
+```
+
+\definecolor{myblue}{rgb}{0.24,0,1}
+
+\fontsize{11}{12}
+
+\vspace{3mm} \hrule \vspace{1mm} 
+
+$$
+{\Large \underline{\textbf{Important Notes}}}
+$$
+
+\vspace{-2mm} 
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  ${\large \text{This appendix is for my main code file:}\ \texttt{CompleteAnalysis.Rmd}.}$
+\item[$\vphantom{)}$] 
+  Many code chunks are very similar with subtle changes. 
+  For instance, I often run the same code for each model, but just change the model name.
+  In these cases, for the appendix, I will only show and explain the code for 1-2 models.
+\item[$\vphantom{)}$] 
+  Quick comments about an entire code chunk are added at the top of the code chunk, 
+  quick comments about a specific line within a code chunk are added to the right of the line, and 
+  further details appear below/after (example below).
+\end{enumerate}
+
+
+\small
+```{r}
+# Sample Commenting Structure
+UncommentedLine <- "Straightforward - No Comment Necessary"
+CommentedLine <- "Commented Text"                            # Comment About Just This Line
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  Further details that are unnumbered refer to the whole chunk. 
+\item[$\color{red}{(3)}$] 
+  Red numbers listed refer to details regarding code in the corresponding line number.  
+\end{enumerate}
+
+\vspace{1mm} \hrule \vspace{-1mm} 
+
+### $\underline{\textbf{Section 0}}$ \vspace{-4mm}
+
+\small
+```{r}
+source("/Users/Eduardo/Desktop/R/MyFunctions.R")
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  I created several of my own functions in an R script ($\texttt{MyFunctions.R}$), which I used throughout my code.
+\item[$\color{red}{(1)}$] 
+  $\texttt{MyFunctions.R}$ was loaded to the local environment of $\texttt{CompleteAnalysis.Rmd}$.
+\item[$\vphantom{)}$]
+  $\textbf{IMPORTANT!!!}$ In order for my code to execute properly in your computer, change \\
+  $\texttt{source("/Users/Eduardo/Desktop/R/MyFunctions.R")}$ to the location you have the file saved on your computer.
+\end{enumerate}
+
+\small
+```{r, warning=FALSE, message=FALSE}
+# Loading All Packages Required to Execute My Main Code File
+library(scales)     # To visualize My Colors below and provides font families
+library(knitr)      # For LaTeX Tables
+library(kableExtra) # For LaTeX Tables with advanced customization
+library(leaps)      # For finding best subset models via exhaustive search
+library(car)        # For regression (VIF of Predictors)
+library(modelr)     # For regression (MAE, MSE, RMSE)
+library(performance)# Get model performance stats and provides additional fonts
+library(tidyverse)  # Fundamental R package of libraries used for data processing, visualizations, etc.
+library(ggrepel)    # Add labels to ggplots while prevent overlaps
+```
+
+```{r}
+mycolors <- c("#cc3333", "#3B00fb", "#737373", "#04551f", "#782ab6", "#daa500", 
+              "#753232", "#84e9ec", "#000000", "#00cd00", "#ff00c0", "#ffff00", 
+              "#f98b85", "#005e7d", "#babab1", "#0d987d", "#330066", "#856601", 
+              "#ff5000", "#66B0ff", "#685a4e", "#00ff99", "#ca9ec2", "#fbbb05", 
+              "#a11f48", "#5b09ba", "#2c2520", "#044111", "#fe9aaa", "#e0cd67")
+scales::show_col(mycolors, cex_label = 0.95)                       # Plot to Visually Examine Colors
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  I decided to manually define $30$ colors using Hex Codes such that the colors contrast each other well for visualizations. 
+  I only ended up using $28$ of these colors: $1$ for Life Expectancy (LE) and $27$ for each of the $27$ predictors.
+\item[$\color{red}{(\text{1-5})}$] 
+  Colors were inputed row by row (left to right); these colors really contrast each other well (see plots throughout). 
+\item[$\color{red}{(6)}$] 
+  Observe the actual plot produced in $\texttt{CompleteAnalysis.Rmd}$.
+  Each isolated columns (top to bottom) consist of colors coming from the same core color: 
+  red/orange, blue, gray/black, green, purple/pink, yellow. 
+\item[$\vphantom{)}$] 
+  If confusing, all you need to know is that I used these colors in order to easily distinguish variables in my visualizations.
+\end{enumerate}
+
+
+\small
+```{r FullNames}
+DemNames <- c("Total Population", "\\% Male", "\\% Female", 
+              "\\% Non-Hispanic White", "\\% Non-Hispanic Black", 
+              "\\% Hispanic or Latino", "\\%  Asian or Pacific Islander", 
+              "\\% Children (0-17 years)", "\\% Young Adults (18-39 years)", 
+              "\\% Middle-Aged Adults (40-64 years)", "\\% Seniors (65 and older)")
+ACSNames <- c("Average Life Expectancy",                                           # 2015-2019 5-Year Averages
+              "Number of Federally Qualified Health Centers",                      # Total Counts 
+              "Median Household Income", "Per Capita Income",                      # USD
+              "Poverty Rate",                           # % of Residents in Families Below Federal Poverty Level
+              "Unemployment Rate",                      # % of Residents >= 16 Actively Seeking Employment
+              "Preschool Enrollment",                                           # % of Toddlers Ages 3-4 
+              "High School Graduation Rate", "College Graduation Rate",         # % of Residents >= 25 
+              "Limited English Proficiency",                                    # % of Residents >= 5
+              "Foreign Born", "Uninsured Rate",                                 # % of Residents 
+              "Ambulatory Difficulty", "Cognitive Difficulty",                  # % of Residents
+              "Hearing Difficulty", "Independent Living Difficulty",            # % of Residents
+              "Self Care Difficulty", "Vision Difficulty",                      # % of Residents
+              "Food Stamps (SNAP)", "Public Assistance Income (Cash Welfare)",  # % of Household
+              "Households in Poverty Not Receiving SNAP",          # % of Households Below Federal Poverty Level
+              "Rent Burdened", "Severely Rent Burdened",           # % of Renter-Occupied Households 
+              "Single Parent Households",                                       # % of Households 
+              "Vacant Housing",                                                 # % of Housing Units
+              "Crowded Housing",                                                # % of Occupied Housing Units
+              "Economic Diversity Index",                                       # Score Ranging Between 0-0.83
+              "Hardship Index")                                                 # Score Ranging Between 0-100
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  Full variables names for each data set were stored in $\texttt{DemNames}$ and $\texttt{ACSNames}$ for reference, 
+  but only $\texttt{DemNames}$ was used (once in $\texttt{Section 1.1}$). 
+  Units are provided for each ACS variable in the comments to the right of each line.
+\end{enumerate}
+
+
+\vspace{5mm} \hrule
+\newpage
+
+
+# $\underline{\textbf{The Data}}$  \vspace{-2mm}
+
+## $\textbf{Demographics}$ \vspace{-2mm}
+\small
+```{r LoadDem}
+LoadDem <- read_csv("Data/CSV/Demographics.csv", show_col_types = F)
+DemDF <- cbind(LoadDem[,1:5], as_tibble(apply(LoadDem[,6:15], 2, function(x) (x / LoadDem$POP) * 100)))
+ChiDem <- DemDF[1,]
+CADem <- DemDF[-1,]
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(1)}$]
+  Loaded the data containing demographics for Chicago, IL and each of its 77 Community Areas (CAs).
+\item[$\color{red}{(2)}$]
+  $\texttt{DemDF}$ converts totals into percentages.
+\item[$\color{red}{(3)}$]
+  $\texttt{ChiDem}$ contains data for Chicago, IL only. 
+\item[$\color{red}{(4)}$]
+  $\texttt{CADem}$ contains data for the 77 CAs only.
+\end{enumerate}
+
+\small
+```{r DemStats}
+ChiDemStats <- tibble(Demographic = DemNames, Chicago = round(unlist(select(ChiDem, POP:Seniors)), 2))
+CADemStats <- sum.tab(CADem[,5:15], exclude=c("Var", "CV", "SD"), digits=2) %>%
+  mutate(Demographic = ƒDemNames) %>% 
+  select(Demographic, Min:Max)
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  This is the only time I used $\texttt{DemNames}$ defined in $\texttt{Section 0}$.
+\item[$\color{red}{(1)}$] 
+  $\texttt{ChiDemStats}$ provides demographics for Chicago, IL overall. 
+\item[$\color{red}{(\text{2-4})}$] 
+  $\texttt{CADemStats}$ stores summary statistics in a tibble (data frame).
+\item[$\color{red}{(2)}$] 
+  I created the function $\texttt{sum.table}$, which can be found in the script file, $\texttt{MyFunctions.R}$
+\end{enumerate}
+
+
+\small
+```{r}
+AllDemDF <- cbind(ChiDemStats, CADemStats[,-1]) %>%
+  mutate_if(.predicate = is.double, 
+            function(x) ifelse(x > 1500, 
+              yes = paste("$\\boldsymbol{", 
+                          format(round(x), big.mark = ",",  drop0trailing = T, scientific = F), 
+                          "}$", sep = ""), 
+              no = paste("$\\boldsymbol{", 
+                         format(x, scientific = F, nsmall = 2, trim = T), 
+                         "}$", sep = "")
+              ))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(1)}$] 
+  Recombined the tibbles containing statistics for Chicago and each CA.
+\item[$\color{red}{(\text{2-9})}$] 
+  To fit columns in the screen, I did some fancy formatting. 
+  Also, I made each numeric value bold.
+\end{enumerate}
+
+
+\small
+```{r}
+kbl(AllDemDF, align = "lrrrrrrr", linesep = "", escape = F, 
+      col.names = paste("$\\underline{\\textbf{", names(AllDemDF), "}}$")) %>% 
+  kable_styling(bootstrap_options = c("hover", "striped"), 
+                htmltable_class = "lightable-classic",        # Built-In HTML Table Style
+                html_font = "Courier", font_size = 15) %>%    
+  row_spec(0, align = "c", font_size = 16, extra_css = 'font-family: "serif;"') %>%
+  column_spec(1, width = "30em", bold = T) %>%
+  column_spec(2:8, width = "7em") 
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  Several chunks are similar to the one above.
+  I will only provide details once for the code in the chunk above.
+\item[$\color{red}{(1)}$] 
+  $\texttt{kbl()}$ converts the tibble $\texttt{AllDemDf}$ into a nicely formatted LaTeX or HTML table. \\
+  $\texttt{align = "lrrrrrrr"}$ refers to the vertical alignment for each of the 8 columns in this data table.
+  The first column is left-aligned and the rest are right-aligned.  \\
+  $\texttt{linesep = ""}$: Adjust spacing between rows such that no space is added. \\
+  $\texttt{escape = F}$: To avoid conflicts between HTML and LaTeX special characters, I always set this to FALSE.
+\item[$\color{red}{(2)}$] 
+  I used \LaTeX\ to modify the column names so that they would be in bold and underlined.
+\item[$\color{red}{(3)}$] 
+  $\texttt{"hover"}$ makes it so that the table rows light up when the mouse moves over them.   \\
+  $\texttt{"striped"}$ makes even row numbers have different background colors.
+\item[$\color{red}{(6)}$] 
+  Header row is center-aligned, contains slightly larger font, and the font-family is $\texttt{serif}$ instead of $\texttt{Courier}$.
+\item[$\vphantom{)}$] 
+  Lines $\texttt{column\_spec}$ lines and all other settings are straightforward.
+\end{enumerate}
+
+
+## $\textbf{Life Expectancy, FQHC, and ACS Data}$  \vspace{-2mm}
+\small
+```{r LoadACS}
+LoadACS <- read_csv("Data/CSV/Main-Data.csv", show_col_types = F) # Loading Main ACS Data Set
+CADF <- LoadACS[-1,]                                              # 77 CAs Only (Chicago Excluded)
+CA2 <- filter(CADF, Name != "Burnside", Name != "Fuller Park")    # `CA2` Excludes Burnside and Fuller Park 
+```
+
+```{r MeltCA}
+MeltCADF <- select(CADF, LE:HardshipIndex) %>% 
+  pivot_longer(cols = 1:28, names_to = "Variable", values_to = "Value") %>%
+  mutate(Variable = factor(Variable, levels = names(CADF)[-1:-3]))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  I took all 28 variables and stored there names in a column labeled "Variable" and their values in column "Value".
+\item[$\color{red}{(3)}$] 
+  $\texttt{factor(Variable)}$ makes transforms names from ordinary strings to categorical variables. \\
+  $\texttt{levels}$ are unique categories specified in order.
+  I set the $\texttt{levels}$ equal to the 28 variable names in the order they are listed in the data. 
+  If levels are not specified, then the factors will be ordered alphabetically.   
+\end{enumerate}
+
+
+\small
+```{r BoxPlots, fig.height=9, fig.width=9}
+# Box plots for each variable are generated. 
+ggplot(data = MeltCADF, aes(x = Variable, y = Value)) +
+  
+  geom_boxplot(aes(fill = Variable), show.legend = F, 
+               color = ifelse(unique(MeltCADF$Variable) == "College", "#daa500", "black"),
+               outlier.color = "Red3", outlier.alpha = 0.55,          # alpha range: 0 (transparent) - 1 (not transparent)
+               outlier.size = rel(1.25), outlier.stroke = rel(1)) +   # stroke is an additional size modification
+  facet_wrap(vars(Variable), scales = "free") + 
+  
+  labs(title = "Box Plots for Each Variable Considered", x = NULL, y = NULL) +  # x and y labs implied in plot
+  scale_fill_manual(values = mycolors) +        
+  scale_y_continuous(n.breaks = 4, labels=scales::comma) + 
+  
+  theme_bw() +           # Built-In Black and White Theme
+  theme(plot.title = element_text(hjust = 0.5, vjust = 2, face = "bold", size = rel(1.5), family="Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(0.9), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        panel.grid.major.y = element_line(color = "grey74"), 
+        panel.grid.minor.y = element_line(color = "grey84"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.y = element_text(size = rel(0.95), color = "black"),
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  The repeatedly used $\texttt{rel()}$ function is used to make size modifications adjust based on the document environment dimensions. 
+  That is, $\texttt{rel()}$ makes the sizes proportional to the window they are being viewed in.
+\item[$\color{red}{(2)}$] 
+  All my visualizations begin with $\texttt{ggplot()}$, which creates a blank plot window.
+  If the data and the $x$ and $y$ variables to plot are specified in $\texttt{ggplot()}$ under $\texttt{data =}$ and $\texttt{aes()}$, respectively, 
+  then they are automatically applied to all subsequent functions beginning with $\texttt{geom}$.
+\item[$\color{red}{(4)}$] 
+  In addition to the aesthetics $\big(\texttt{aes()}\big)$ specified in $\texttt{ggplot()}$,
+  I added aesthetics so that each variable generate a separate box plot that is distinguished by the color used to fill the box.
+\item[$\color{red}{(5)}$] 
+  I like to set the box line colors to black, but one of $\texttt{mycolors}$, which I used to fill the boxes, is already black.
+  Consequently, it will be impossible to see the black lines. 
+  Therefore, I used an $\texttt{ifelse()}$ statement to make only the black filled box use different colored lines. 
+\item[$\color{red}{(8)}$] 
+  $\texttt{face\_wrap()}$ generates a separate plot window for each variable.
+\item[$\color{red}{(12)}$] 
+  Each unique y-axis will have roughly 4 main breaks, and big numbers will include commas.
+\item[$\color{red}{(\text{13-23})}$] 
+  $\texttt{theme\_bw()}$ and $\texttt{theme()}$ are styling modifications that are not essential, and, thus, I will not explain them in detail.
+\end{enumerate}
+
+
+\newpage
+
+
+## $\textbf{Training and Test Set}$ \vspace{-2mm}
+
+\small
+```{r}
+set.seed(9711) # Same random numbers sampled every time
+trainRows <- sample(x = c(1:36, 38:46, 48:77), size = 45, replace = F)
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  I randomly selected 45 GEOIDs from 75 total GEOIDs. 
+  While there are 77 total CAs with GEOIDs, Fuller Park and Burnside, 
+  which have GEOIDs 37 and 47, respectively, were excluded because they are potential outliers.
+\end{enumerate}
+
+\small
+```{r}
+# Producing Data Frames for Training Set 1, Training Set 2, and the Test Set
+preTrainDF1 <- filter(CADF, GEOID %in% c(37, 47, trainRows))  
+trainDF1 <- preTrainDF1[c(which(preTrainDF1$GEOID %in% c(37, 47)), which(preTrainDF1$GEOID %in% trainRows)), ]
+trainDF2 <- trainDF1[-1:-2,]         # Selecting all 45 CAs except Burnside and Fuller Park
+testDF1 <- filter(CADF, GEOID %notin% c(37, 47, trainRows))  # Contains all CAs not in trainDF1
+
+n1a <- nrow(trainDF1)    # n1a = 47 (CAs in Training Set 1)
+n2a <- nrow(trainDF2)    # n2a = 45 (CAs in Training Set 2)
+n1b <- nrow(testDF1)     # n1b = 30 (CAs in Test Set)
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(2)}$] 
+  I created a data frame containing Burnside, Fuller Park, and the 45 CAs with the GEOIDs randomly sampled in the previous chunk.
+\item[$\color{red}{(3)}$] 
+  $\texttt{trainDF1}$ is an organized version of $\texttt{preTrainDF1}$ with Burnside and Fuller Park located at rows 1 and 2, respectively, 
+  and the remaining 45 CAs are organized alphabetically in rows 3-47.
+\end{enumerate}
+
+\vspace{1mm} \hrule \vspace{-1mm} 
+
+# $\underline{\textbf{Full Model 1} \ \big(\boldsymbol{FM_1}\big) \ \textbf{vs} \ \textbf{Full Model 2} \ \big(\boldsymbol{FM_2}\big)}$ \vspace{-2mm} 
+
+## $\textbf{Regression Summaries}$ \vspace{-3mm} 
+\small
+```{r}
+s.FM1 <- summary(FM1 <- lm(LE ~ ., data = trainDF1[-1:-3])) 
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$]
+  I created a linear model that I called FM1 (Full Model 1), and saved its summary into a variable called s.FM1 all in one line;
+  I did the same for FM2.
+\item[$\color{red}{(1)}$]
+  Notice, I set $\texttt{data = trainDF1[-1:-3]}$ because the first three columns are $\texttt{Name}$, $\texttt{Label}$, and $\texttt{GEOID}$, 
+  all of which all of which I do not want to use to predict Life Expectancy (LE).
+\end{enumerate}\vspace{-5mm}
+
+
+### $\textsf{FM}_{\boldsymbol{1}}$ \vspace{-5mm}
+\small
+```{r}
+# Converting the Regression Summary into a LaTeX Table
+kbl(s.Mod2LaTeX(s.FM1, label = "\\boldsymbol{FM_1}"), align = "lrrrc", linesep = "", escape = F) %>% 
+  
+  kable_styling(bootstrap_options = c("hover", "striped"), htmltable_class = "lightable-classic",
+                html_font = "Courier", font_size = 16, full_width = F) %>%
+  
+  row_spec(0, align = "c", font_size = 17, extra_css = 'font-family: "serif;"') %>%
+  
+  column_spec(1, width = "12em") %>%
+  column_spec(2:4, width = "10em") %>%
+  column_spec(5, width = "6em")
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(2)}$] 
+  The function $\texttt{s.Mod2LaTeX()}$ is defined in $\texttt{MyFunctions.R}$;
+  it converts a regression summary into a nice \LaTeX\ table.
+\end{enumerate}\vspace{-5mm}
+
+
+## $\textbf{Related Data}$  \vspace{-3mm}
+
+### $\textsf{FM}_{\boldsymbol{1}}$  \vspace{-3mm}
+\small
+```{r}
+# Created a tibble containing key values used in the next section: 2.3 Diagnostic plots
+FM1.DF <- tibble(Index = 1:47, trainDF1[,2:4], 
+                 Fit = FM1$fitted.values, Residual = FM1$residuals, Std_Res = rstandard(FM1),
+                 Leverage = hatvalues(FM1), CooksD = cooks.distance(FM1)) 
+as_tibble(cbind(FM1.DF[,1:3], round(FM1.DF[,-1:-3], 3)))      # Rounded numeric values to 3 decimal places
+```
+\normalsize\vspace{-5mm}
+
+## $\textbf{Diagnostic Plots}$  \vspace{-2mm}
+
+### $\underline{\textsf{Residuals vs. Fits}}$ \vspace{-2mm}
+
+#### $\textsf{FM}_{\boldsymbol{1}}$ \vspace{-2mm}
+$~$
+\small
+```{r ResPlotFM1}
+# This chunk generates a scatter plot of the Residuals (y-axis) vs Fitted Values (x-axis).
+FM1.RvF <- ggplot(FM1.DF, aes(x = Fit, y = Residual)) +
+  
+  geom_point(shape = 1, size = rel(3), color = "black") +
+
+  geom_abline(slope = 0, intercept = 0, color = "Red1", linetype = 2, size = rel(0.65), alpha = 0.75) +
+
+  stat_smooth(formula = y*(2/3) ~ x, method = "loess", se = F, color = "#3B00FB", size = rel(0.5), span = 0.8) +
+
+  geom_label_repel(aes(label = ifelse(Label == "FullerPk" | Label == "Burnside", Label,'')),
+                   nudge_x = -2, nudge_y = ifelse(FM1.DF$Label == "FullerPk", 0.75, -0.75),
+                   size = rel(3.75), box.padding = 0.3, label.padding = 0.3) +
+
+  labs(title = "Full Model 1  -  Residuals  vs.  Fitted Values", x = "Fitted Values", y = "Residuals") +
+  
+  scale_x_continuous(limits = c(65.6, 84.4), breaks = seq(65, 85, 5)) +
+  scale_y_continuous(limits = c(-1.9, 1.9), breaks = c(-2, -1, 0, 1, 2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(size = rel(1.25), face = "bold", family = "sans", 
+                                         margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(size = rel(1.25), face = "bold", family = "sans", 
+                                           margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier"))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(4)}$] 
+  Setting $\texttt{shape = 1}$ makes the points open circles instead of solid points, 
+  which makes it easier to see if multiple points are overlapping. 
+\item[$\vphantom{)}$] 
+  The red and blue lines are used to assess a key linear regression assumption about the residuals $(e_i)$: 
+  $$e_i \sim N(0, \sigma^2)$$
+  This means that the points should have mean equal to zero and constant variance from left to right. 
+  In other words, they should be approximately symmetric across the x-axis. \vspace{-2mm}
+\item[$\color{red}{(6)}$] 
+  I overlaid a red dashed horizontal line on the x-axis used to highlight the zero mean location.
+\item[$\color{red}{(8)}$] 
+  Running the generic $\texttt{plot(FM1, which=1)}$ plots the Residuals vs Fitted Values with a red trend $\texttt{loess}$ line. 
+  I researched how this line is generated and tried to replicate the line in a $\texttt{stat\_smooth()}$ environment. 
+  Instead of making the formula $y \sim x$, 
+  I multiplied $y*(2/3)$, which makes the $\texttt{loess}$ line less sensitive to single y-values. 
+  The $\texttt{span}$ setting controls the line smoothness.
+  Overall, line $\color{red}{(8)}$ transform the $\texttt{loess}$ line such that the line should be close to 0 for all x-values; 
+  otherwise, the mean is not equal to 0. 
+  Also, if the line has periods that deviate sharply from the x-axis, this suggest that the variance is not constant/symmetric.
+\item[$\color{red}{(10)}$] 
+  I labeled Burnside and Fuller Park because I was investigating the possibility that these CAs represent outliers.
+  The function $\texttt{geom\_label\_repel}$ is from the $\texttt{ggrepel}$ package. It assures no labels overlap.
+\item[$\color{red}{(\text{11-12})}$]
+  These are just styling modifications.
+\item[$\color{red}{(16)}$] 
+  $\texttt{limits = c(65.6, 84.4)}$ The x-axis consist of values between 65.7 and 84.4. \\
+  $\texttt{breaks = seq(65, 85, 5)}$ Major tick marks are located at $y=65,70,75,80,85$.
+\item[$\color{red}{(17)}$] 
+  Similar modifications as in line $\color{red}{(16)}$, but for the y-axis.
+\end{enumerate}
+
+
+
+\newpage
+
+### $\underline{\textsf{Normal Q-Q Plot}}$ \vspace{-2mm}
+\small
+```{r}
+# Used in all Models
+q.x <- qnorm(c(.25, .75)) # z-scores                  
+
+# Full Model 1 Calculations
+FM1.y <- quantile(FM1.DF$Std_Res, c(.25, .75)) 
+FM1.slope <- diff(FM1.y) / diff(q.x)
+FM1.int  <- FM1.y[1] - FM1.slope * q.x[1]
+FM1.q <- sort(rank(FM1.DF$Std_Res) - 0.5) / nrow(FM1.DF)
+FM1.theoQ = qnorm(FM1.q, mean = mean(FM1.DF$Std_Res), sd = sd(FM1.DF$Std_Res))
+FM1.qq <- tibble(Std_Res = sort(FM1.DF$Std_Res), TheoQ = FM1.theoQ)
+
+FM1.qqDF <- inner_join(FM1.DF, FM1.qq, by = "Std_Res") %>% 
+  select(Index:Std_Res, TheoQ, everything()) %>%
+  arrange(Std_Res)
+FM1.dist <- matrix(c(FM1.slope * FM1.qqDF$TheoQ + FM1.int, FM1.qqDF$Std_Res), ncol = 2)
+FM1.qqDF2 <- FM1.qqDF %>%
+  mutate(QQDist = apply(FM1.dist, 1, function(x) dist(x, method = "euclidean")))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$]     
+  Note, $\texttt{plot(FM1, which=2)}$ easily a basic Normal Q-Q plot. 
+  I decided to manually generate it in order to manually label extreme points.
+  Since there are quick alternative options for generating a Normal Q-Q plot, 
+  the computations are not very important, so I will not explain each line of code. 
+\item[$\color{red}{(17)}$]
+  I will explain my calculations for $\texttt{QQDist}$ because it is an added computation that was not required. 
+  $\texttt{QQDist}$ measures the euclidean distance between each data point and the Normal Q-Q line 
+  ($\color{myblue}{\text{blueish-purple line}}$ in the FM1 plot below). 
+  I added $\texttt{QQDist}$ in order to identify points that are relatively far from the Normal Q-Q line. 
+  Such points are potential outliers because they deviate away from the assumed/theoretical normal distribution.
+\end{enumerate}
+
+
+#### $\textsf{FM}_{\boldsymbol{1}}$  \vspace{-2mm}
+$~$
+\small
+```{r qqPlotFM1}
+FM1.qqPlot <- ggplot(FM1.qqDF2, aes(x = TheoQ, y = Std_Res)) +
+  
+  geom_abline(slope = FM1.slope, intercept = FM1.int, linetype=1, size = rel(1.5), color = "#3B00FB", alpha=0.65) +
+  
+  geom_point(shape = 1, size = rel(4), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(abs(Std_Res) > 2 | QQDist > 0.5 | Label == "FullerPk" | Label == "Burnside", Label,'')), 
+    nudge_x=ifelse(FM1.qqDF2$Std_Res == max(FM1.qqDF2$Std_Res), -0.75, 0),
+    nudge_y=ifelse(FM1.qqDF2$Std_Res == min(FM1.qqDF2$Std_Res) | FM1.qqDF2$Std_Res == max(FM1.qqDF2$Std_Res), 1,-1.25),
+    size = rel(3.75), box.padding = 0.3, label.padding = 0.3) + 
+  
+  labs(title = "Full Model 1  -  QQ Plot", x = "Theoretical Quantiles", y = "Standardized Residuals") +
+
+  scale_x_continuous(limits = c(-2.9, 2.9), breaks = seq(-3, 3, 1)) +
+  scale_y_continuous(limits = c(-2.9, 2.9), breaks = seq(-3, 3, 1)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_blank(),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier"))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(3)}$] 
+  Produces Normal Q-Q Line
+\item[$\color{red}{(8)}$] 
+  I labeled Burnside and Fuller Park, points with Standardized Residuals > 2, and/or Euclidean Distance > 0.5.
+\end{enumerate}
+
+
+
+### $\underline{\textsf{Point Leverage}}$ \vspace{-2mm}
+
+\begin{align*}
+\underline{\text{Point Leverage}}: \boxed{~h_i  = H_{ii} = diag(H)\vphantom{\Big)}~} \ , & \ \ \text{where} \ \ H = \boldsymbol{X(X^T X)^{-1}X^T}
+\\ \\
+\underline{FM_1 - \text{Cutoff Value for Point Leverage}} & = \frac{2(p+1)}{n_1} = \frac{2(28)}{47} \approx 1.19 
+\\ \\
+\underline{FM_2 - \text{Cutoff Value for Point Leverage}} & = \frac{2(p+1)}{n_2} = \frac{2(28)}{45} \approx 1.2\bar{4}
+\end{align*}
+
+
+#### $\textsf{FM}_{\boldsymbol{1}}$  \vspace{-2mm}
+$~$
+\small
+```{r LevFM1}
+maxLevFM1 <- (2 * length(coef(FM1))) / nrow(FM1.DF)   # The Cutoff Value
+
+# Point Leverage Plot for FM1
+LevPlotFM1 <- ggplot(data = FM1.DF, aes(x = Index, y = Leverage)) +
+  
+  geom_hline(yintercept = maxLevFM1, color = "Red1", linetype = 2, size = rel(0.75)) + # Cutoff Line
+  
+  geom_linerange(aes(ymin = 0, ymax = Leverage), color = "#3B00FB", size = rel(0.9)) + 
+  
+  geom_point(size = rel(2), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(Leverage > maxLevFM1 | Label == "FullerPk" | Label == "Burnside", Label,'')), 
+    nudge_y = 0.08, nudge_x = 0.15, size = rel(3.75), label.r = 0.5, box.padding = 0.3, label.padding = 0.3) + 
+  
+  geom_label_repel(
+    data = filter(FM1.DF, Index == 27), 
+    aes(x = 27.5, y = maxLevFM1, label = paste0("Cutoff Value = ", round(maxLevFM1, 5), collapse = "")),
+    color = "Red1", size = rel(3.75), family = "Arial", 
+    nudge_y = -0.095, nudge_x = 0, label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  labs(title = "FM 1  -  Point Leverage", x = "Index", y = "Leverage") +
+  
+  scale_x_continuous(limits = c(1, 47), breaks = seq(5, 85, 10)) +
+  scale_y_continuous(limits = c(0, 1.25), breaks = seq(0, 1.2, 0.2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier"))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(8)}$] 
+  $\texttt{geom\_linerange()}$ is similar to a column chart except each column is a vertical line.
+\item[$\color{red}{(13)}$] 
+  The code labels points with leverage exceeding the cutoff value, but no points did. 
+  Thus, only Burnside and Fuller Park were labeled to assess their influence.
+\item[$\color{red}{\text{(16-20)}}$] 
+  I labeled the cutoff line with the actual cutoff value.
+\item[$\color{red}{(17)}$] 
+  To ensure the label is not repeated, I had to filter the data to only one observation located at Index 27.
+  I selected Index 27 because I wanted the label to be placed around $x=27$.
+\end{enumerate}
+
+
+### $\underline{\textsf{Cook's Distance}}$ \vspace{-2mm}
+
+\begin{align*}
+\underline{\text{Cook's Distance}}:
+  & \quad D_i  = \frac{r_i^2}{p+1} \cdot  \frac{h_i}{1-h_i} 
+\\ \\ 
+\underline{\text{Cutoff Value for Cook's Distance}}: 
+  & \quad  D_i > F\big(~p=0.5, ~~~ df_1 = p+1, ~~~ df_2 = n - p - 1 ~\big) 
+\\ \\
+\hookrightarrow\ \text{FM 1}: 
+  & \quad D_i > F\big(~p=0.5, ~~~ df_1 = 28, ~~~ df_2 = 19 ~\big) \approx 0.0466
+\\ \\
+\hookrightarrow\ \text{FM 2}: 
+  & \quad D_i > F\big(~p=0.5, ~~~ df_1 = 28, ~~~ df_2 = 17 ~\big) \approx 0.0504
+\end{align*}
+
+
+#### $\textsf{FM}_{\boldsymbol{1}}$  \vspace{-2mm}
+$~$
+\small
+```{r CookFMPlot1}
+# Cutoff Value
+maxCookFM1 <- pf(0.5, 28,  19)
+
+# Plot of Each Points Cook's Distance
+CookPlotFM1 <- ggplot(data = FM1.DF, aes(x = Index, y = CooksD)) +
+  
+  geom_hline(yintercept = maxCookFM1, color = "Red1", linetype = 2, size = rel(0.75)) +
+  
+  geom_linerange(aes(ymin = 0, ymax = CooksD), color = "#3B00FB", size = rel(0.9)) +
+  
+  geom_point(size = rel(2), color = "black") +
+  
+  geom_label_repel(
+    aes(label = ifelse(CooksD > 0.15 | Label == "FullerPk" | Label == "Burnside", Label,'')), 
+    nudge_x = ifelse(FM1.DF$Label == "FullerPk" | FM1.DF$Label == "Chatham", 1.25 ,0), nudge_y = 0.085, 
+    size = rel(3.75), label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  geom_label_repel(
+    data = filter(FM1.DF, Index == 26),
+    aes(x = 29.25, y = maxCookFM1, label = paste0("Cutoff Value = ", round(maxCookFM1, 4), collapse = "")),
+    color = "Red1", size = rel(3.75), family = "Arial",
+    nudge_y = 0.3, nudge_x = 0, label.r = 0.5, box.padding = 0.3, label.padding = 0.3) +
+  
+  labs(title = "FM 1  -  Cook's Distance", x = "Index", y = "Cook's Distance") +
+  
+  scale_x_continuous(limits = c(1, 47), breaks = seq(5, 85, 10)) +
+  scale_y_continuous(limits = c(0, 0.85), breaks = seq(0, 0.8, 0.2)) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", size = rel(1.5), color = "#3B00FB", family = "serif"), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom = element_text(
+          size = rel(1.25), face = "bold", family = "sans", margin = margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.2), face = "bold", family = "Courier"))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  The code for this plot is basically the same as the previous point leverage plot. 
+  The only difference is Cook's distance is plotted and the corresponding cutoff values.
+\end{enumerate}
+
+
+\newpage
+
+## $\textbf{VIF}$  \vspace{-2mm}
+\small
+```{r}
+`FM Predictors` <- names(vif(FM1))            # Storing the name of each predictor
+`FM1 VIF` <- vif(FM1); `FM2 VIF` <- vif(FM2)  # Storing the VIF for each FM
+
+FM.VIF.DF <- tibble(`FM Predictors`, `FM1 VIF`, `FM2 VIF`) %>%
+  arrange(desc(`FM1 VIF` + `FM2 VIF`))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  The $\texttt{car}$ package has a $\texttt{vif()}$ function where the input is linear model, and it outputs the VIF values for each predictor in the model.
+\item[$\color{red}{(1)}$] 
+  The names for FM1 and FM2 are the same since they both are full models.
+\item[$\color{red}{(3)}$] 
+  The $\texttt{vif()}$ function outputs the VIF values as a vector. 
+  I converted this to a tibble.
+\item[$\color{red}{(4)}$] 
+  While the magnitude of a VIF value is important, the order VIF values are displayed in the table does not matter. 
+  I chose to order then in descending order by the sum of a predictors VIF in FM1 and FM2.
+\item[$\vphantom{)}$] 
+  Note, I omitted the code for the LaTeX version of the table because I already explained such code in $\texttt{Section 2.1.1}$.
+\end{enumerate}
+
+\vspace{3mm} \hrule \vspace{-1mm} 
+
+
+# $\underline{\textbf{Best Subset Models}}$ \vspace{-2mm} 
+
+## $\textbf{Selection Statistics}$ \vspace{-2mm}
+
+### (Skip Section) \vspace{-2mm}
+
+- The code in this sub-section contains was used to extract the models via complex for loops. 
+- No output is generated.
+
+\small
+```{r}
+BestEx1 <- regsubsets(x = as.matrix(select(trainDF1, FQHC:HardshipIndex)), y = trainDF1$LE, 
+                      method = "exhaustive", nvmax = 20, nbest = 1)
+S.BestEx1 <- summary(BestEx1)      # Saving the Summary
+nmods <- nrow(S.BestEx1$which)     # Since I set nvmax = 20 and nbest = 1, nmods = 20
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  $\texttt{regsubsets()}$ is a function used to quickly find subset models that are strong candidates for the best subset model. 
+  Please refer to the following link, 
+  providing documentation on the $\texttt{regsubsets()}$ function from the $\texttt{leaps}$ package:
+\item[$\vphantom{)}$] 
+  [https://www.rdocumentation.org/packages/leaps/versions/3.1/topics/regsubsets](https://www.rdocumentation.org/packages/leaps/versions/3.1/topics/regsubsets)
+\item[$\color{red}{(1)}$] 
+  The data of all potential predictors must be inputed as a matrix.
+  The outcome variable must be specified separately, and it must be formatted as a vector.
+\item[$\color{red}{(2)}$] 
+  I specified that I would like the function to perform an exhaustive search.
+  Setting $\texttt{nvmax = 20}$ limits the exhaustive search to models with up to 20 parameters. 
+  Given that there are 27 predictors total, this limitation did not affect my final results.
+  Primarily, I added this limitation because it takes a long time for a CPU to perform exhaustive searches.
+  I set $\texttt{nbest = 1}$, which is the default value, because I only want the top model of each size.
+\end{enumerate}
+
+\small
+```{r}
+ModList1 <- getRegSSMods(BestEx1, df = trainDF1, y = trainDF1$LE)
+ModStats.DF1 <- UnpackModStats(ModList1, FM1)
+```
+
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  $\texttt{regsubsets()}$ outputs characteristics of each subset model, but it does not allow for direct extraction of the model itself.
+  I created the functions $\texttt{getRegSSMods()}$ and $\texttt{UnpackModStats()}$, 
+  which can be found in $\texttt{MyFunctions.R}$, 
+  to extract the linear model of each subset size and compute each model selection statistic.
+\end{enumerate}
+
+
+
+\newpage
+
+## $\textbf{Statistic vs. Model Size}$ \vspace{-2mm} 
+
+### $\underline{\textsf{Training Set} \#1}$ \vspace{-2mm}
+\small
+```{r, fig.width=10, fig.height=7}
+# Melted/Gathered Data
+PlotData1 <- select(BestSubsets1, -c(IVs)) %>% 
+  gather(Statistic, Value, -Size)     # A function similar to pivot_longer() from Secction 1.2
+
+# Facet Plots illustrating how each model selection statistic changes as model size increases.
+ggplot(data = PlotData1, aes(Size, Value)) +
+  
+  geom_line(aes(color = Statistic), size = rel(1.25), show.legend = F, alpha = 0.9) +
+  
+  geom_point(shape = 1, color = "black", stroke=rel(0.9), size = rel(2.25), show.legend = F, alpha = 0.9)  +
+  
+  facet_wrap(~Statistic, scales = "free") +
+  
+  labs(title = "Training Set #1") +
+  
+  scale_x_continuous(name = "Number of Parameters", limits = c(0, 21), breaks = seq(0, max(PlotData1$Size), 4)) +
+  scale_y_continuous(n.breaks = 6) +
+  
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(1.35), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        axis.text = element_text(size = rel(1.25)), 
+        axis.title = element_text(size = rel(1.2), face = "bold"),
+        axis.title.y.left = element_blank(), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84")) 
+```
+\normalsize\vspace{-5mm}
+
+\vspace{9mm} \hrule \vspace{-1mm} 
+
+# $\underline{\textbf{Regression Analysis}}$ \vspace{-2mm} 
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  This section contains code similar to the code already explained in $\texttt{Section 2.1}$. 
+\end{enumerate}
+
+\vspace{1mm} \hrule \vspace{-1mm} 
+
+
+\newpage
+
+# $\underline{\textbf{Results}}$ \vspace{-2mm} 
+
+## $\textbf{Model Fitted \& Predicted Values}$ \vspace{-2mm} 
+
+### $\underline{\textsf{Training Set}} - \textsf{Life Expectancy vs. Fitted Values}$ \vspace{-2mm} 
+
+#### Tabulated Results (Skip This Section) \vspace{-2mm}
+$~$
+\small
+```{r}
+# Training Set 1
+trainPredsM1 <- predict(object = M1, newdata = trainDF1)   # Same as M1$fitted.values
+trainPredsM2 <- predict(object = M2, newdata = trainDF1)
+trainPredsM3 <- predict(object = M3, newdata = trainDF1)
+
+TrainFits1 <- trainDF1 %>% 
+  mutate(M1 = trainPredsM1, M2 = trainPredsM2, M3 = trainPredsM3) %>%
+  select(Label = Name, `Actual LE` = LE, M1, M2, M3, FQHC:HardshipIndex)
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{\text{(2-4)}}$] 
+  Since the $\texttt{newdata = trainDF1}$ is the same data used to train M1, M2, and M3, 
+  the corresponding values are the same as each model's fitted values.
+\item[$\color{red}{\text{(6-8)}}$] 
+  After saving each model's fitted values into separate variables, 
+  I appended them to the main $\texttt{trainDF1}$.
+\item[$\vphantom{)}$] 
+  Then, I did the same with H1, H2, H3, except these models used $\texttt{trainDF2}$ (code omitted).
+\end{enumerate}
+
+
+\small
+```{r}
+# Combined Fits
+FitsDF <- TrainFits1[1:2, 1:5] %>%
+  mutate(H1 = NA, H2 = NA, H3 = NA) %>%
+  rbind(cbind(TrainFits1[3:nrow(TrainFits1), 1:5], TrainFits2[3:5])) %>% 
+  mutate(Index = 1:47) %>%
+  select(Index, everything())
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  I combined the fitted values of all 6 subset models into a new tibble called $\texttt{FitsDF}$.
+\item[$\color{red}{\text{(3-4)}}$]
+  This part is a little tricky. 
+  Recall, $\texttt{trainDF1}$ has two more rows than $\texttt{trainDF2}$ because the former contains Burnside and Fuller Park.
+  In order to combine all fits in one tibble, I just set the values for Burnside and Fuller Park as NA for models H1, H2, and H3.
+\item[$\color{red}{(5)}$] 
+  I appended index values, which are just the row numbers of the tibble. 
+  Index values were assigned for personal tracking of the data, but I did not end up using the index values in later code.
+\end{enumerate}
+
+
+\small
+```{r}
+FitLowBound <- as.numeric(apply(select(FitsDF, `Actual LE`:H3), 1, function(x) min(x, na.rm=T)))    # Extracting the Min Overall Value
+FitHighBound <- as.numeric(apply(select(FitsDF, `Actual LE`:H3), 1, function(x) max(x, na.rm=T)))   # Extracting the Max Overall Value
+
+FitsDF$Low <- floor(FitLowBound)               
+FitsDF$High <- apply(X = tibble(High1 = round(FitHighBound) + 0.5, High2 = round(FitHighBound + 0.5)), 
+                     MARGIN = 1, FUN = function(x) min(x, na.rm=T))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$]
+  Actual Life Expectancy values ranged between 65.89 and 82.94 $\big(range(y_i) = max(y_i) - min(y_i) \approx 17.05\big)$, 
+  and all fitted values ranged between 83.02 and 65.61 $\big(range(\hat{y}_i) = max(\hat{y}_i) - min(\hat{y}_i) \approx 17.41\big)$.
+\item[$\vphantom{)}$]
+  In comparison, the absolute value of all residuals did not exceeded 2 for any model $\big(|e_i| = |y_i - \hat{y}_i| < 2, \ \forall\ e_i\big)$;
+  specifically, the residuals had values ranging between -1.76 and 1.98 $\big(range(e_i) = 1.98 - (-1.76) \approx 3.74\big)$.
+  As a result, the fitted values for each model were very accurate. 
+\item[$\vphantom{)}$]
+  In $\texttt{Section 5.1.1.2}$, I plotted the Actual Life Expectancy (LE) and each models fitted values.
+  If I had set the limits of the $y$-axis to the overall min and max $y$-value of 65.61 and 83.02 for all CAs, 
+  it would have been difficult to observe differences between Actual LE and the fitted values.
+\item[$\vphantom{)}$]
+  Hence, I defined lower and upper bounds for each CA defined below:
+\item[$\color{red}{(4)}$]
+  The lower bounds equaled the min $y$-value rounded down to the nearest whole number. 
+  The lower bounds were saved in a column called $\texttt{Low}$.
+\item[$\color{red}{\text{(5-6)}}$]
+  The upper bounds equals the max $y$-value rounded up to the nearest 0.5 years. 
+  The upper bounds were saved in a column called $\texttt{High}$.
+\item[$\vphantom{)}$]
+  For example, Armour Square had $y$-values ranging between 80.33 and 81.01, so its plot limits were 80 and 81.5.
+\end{enumerate}
+
+
+\small
+```{r}
+# The resulting table is outputted by this code chunk. 
+cbind(FitsDF[,-1], round(select(trainDF1, FQHC:HardshipIndex), 2)) %>%
+  mutate_if(.predicate = is.numeric, .funs = function(x) round(x, 2)) # Numeric columns are rounded to 2 decimal places.
+```
+\normalsize\vspace{-5mm}
+
+
+#### $\textsf{Facet Grid}$ \vspace{-2mm}
+$~$
+\small
+```{r}
+FitPlotDF1 <- FitsDF %>% 
+  pivot_longer(cols = `Actual LE`:H3, names_to = "Model", values_to = "Fits") 
+TrainCAs1 <- unique(FitPlotDF1$Label)[1:24]
+TrainCAs2 <- unique(FitPlotDF1$Label)[25:47]
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{\text{(3-4)}}$] 
+  There were 47 CAs total in the Training Set. 
+  I could not fit all CAs in one plot window, so I made two separate plots containing 24 and 23 CAs, respectively.
+\end{enumerate}
+
+
+\small
+```{r FitPlot1, fig.width=10, fig.height=9}
+# Plot 1
+ggplot(data = filter(FitPlotDF1, Label %in% TrainCAs1), aes(x = Model, y = Fits)) +
+  geom_linerange(aes(ymin = Low, ymax = Fits, color = Model), show.legend = T, size = rel(2.5), alpha = 0.9) +
+  geom_blank(aes(y = High), show.legend = F) +
+  facet_wrap(vars(factor(Label, levels = TrainFits1$Label)), scales = "free_y", ncol = 5) +
+  labs(title = "Actual Life Expectancy vs. Each Model's Fitted Values (Part 1)", x = NULL, y = NULL) +
+  scale_color_manual(values = mycolors) +
+  scale_y_continuous(breaks = seq(64, 85, 1)) +
+  guides(color = guide_legend(nrow=1, label.position = "top", 
+                              label.theme = element_text(family = "Courier", face = "bold", hjust = 0.5) )) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 2, face = "bold", size = rel(1.5), family = "Courier"),
+        strip.text = element_text(hjust = 0.5, face = "bold", size = rel(0.85), color = "White"),
+        strip.background = element_rect(fill = "#005e7d"),
+        panel.grid.major.y = element_line(color = "gray65"),
+        panel.grid.minor.y = element_line(color = "gray70"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.title = element_blank(),
+        axis.text.y = element_text(size = rel(1), color = "Black", family = "sans"),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "top",
+        legend.background = element_rect(color = "Black", fill = "gray90"),
+        legend.key.width = unit(2.7, "cm"),
+        legend.key.height= unit(0.5, "cm"),
+        legend.key = element_rect(fill = "White", color = "Black"),
+        legend.title = element_blank())
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\color{red}{(2)}$] 
+  $\texttt{Label \%in\% TrainCAs1}$: I filtered the fitted training data to only include the first 24 CAs.
+\item[$\color{red}{(4)}$] 
+  $\texttt{geom\_blank}$: I expanded the $y$-axis limits based on my upper bounds previously defined in the previous section (5.1.1.1)
+\item[$\color{red}{(8)}$] 
+  $\texttt{scale\_y\_continuous()}$: To keep plot scales consistent, I set all plots to have major ticks marks every whole value.
+  Accordingly, minor tick marks show up every 0.5 years.
+\item[$\color{red}{(9)}$] 
+  $\texttt{guides()}$: The legend will include all components in 1 row and labels will be placed above their symbol.
+\end{enumerate}
+
+
+\newpage
+
+## $\textbf{Model Accuracy}$ \vspace{-2mm} 
+\small
+```{r}
+PredsMain <- unique(c(names(coef(M1))[-1], names(coef(M2))[-1], names(coef(M3))[-1], 
+                      names(coef(H1))[-1], names(coef(H2))[-1], names(coef(H3))[-1]))
+
+OtherTrainDF1 <- select(trainDF1, -c(all_of(PredsMain), GEOID)) %>%
+  mutate(Label = Name, Name = NULL) 
+OtherTrainDF2 <- select(trainDF2, -c(all_of(PredsMain), GEOID)) %>%
+  mutate(Label = Name, Name = NULL)
+
+s.OM1 <- summary(OM1 <- lm(LE ~ ., data = OtherTrainDF1[-1]))
+s.OM2 <- summary(OM2 <- lm(LE ~ ., data = OtherTrainDF2[-1]))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$] 
+  To compare subset models selected via statistical methods, 
+  I created Other Model 1 (OM1) and Other Model 2 (OM2) containing only the predictors that weren't selected by any other previous subset model.
+\item[$\color{red}{\text{(1-2)}}$] 
+  $\texttt{PredsMain}$ is a vector containing every unique variable included in any previous subset model.
+\item[$\color{red}{\text{(4-7)}}$] 
+  Similar to the previously described $\texttt{trainDF1}$ and $\texttt{trainDF2}$, 
+  $\texttt{OtherTrainDF1}$ includes Burnside and Fuller Park while $\texttt{OtherTrainDF2}$ does not.
+\end{enumerate}
+
+### $\underline{\textsf{Model Accuracy Results}}$ \vspace{-2mm}
+\small
+```{r}
+Models1 <- list(FM1, M1, M2, M3, OM1)
+Labels1 <- c("$\\boldsymbol{FM_1}$", "$\\boldsymbol{M_1}$", "$\\boldsymbol{M_2}$", "$\\boldsymbol{M_3}$", 
+             "$\\boldsymbol{OM_1}$")
+Models2 <- list(FM2, H1, H2, H3, OM2)
+Labels2 <- c("$\\boldsymbol{FM_2}$", "$\\boldsymbol{H_1}$", "$\\boldsymbol{H_2}$", "$\\boldsymbol{H_3}$", 
+             "$\\boldsymbol{OM_2}$")
+AllLabels <- c("$\\boldsymbol{FM_1}$", "$\\boldsymbol{FM_2}$", 
+               "$\\boldsymbol{M_1}$", "$\\boldsymbol{M_2}$", "$\\boldsymbol{M_3}$", 
+               "$\\boldsymbol{H_1}$", "$\\boldsymbol{H_2}$", "$\\boldsymbol{H_3}$", 
+               "$\\boldsymbol{OM_1}$", "$\\boldsymbol{OM_2}$")
+
+FinalAcc.DF <- rbind(ModAccLaTeX2(ListOfModels = Models1, VectorOfLabels = Labels1, 
+                                  TrainSet = trainDF1, TestSet = testDF1),
+                     ModAccLaTeX2(ListOfModels = Models2, VectorOfLabels = Labels2, 
+                                  TrainSet = trainDF2, TestSet = testDF1))  %>% 
+  arrange(factor(Model, levels = AllLabels))
+```
+\normalsize\vspace{-5mm}
+
+
+\begin{enumerate}
+\item[$\color{red}{(1)}$]
+  $\texttt{Models1}$ contains all the models trained with $\texttt{trainDF1}$, which includes Burnside and Fuller Park.
+\item[$\color{red}{(4)}$]
+  $\texttt{Models2}$ contains all the models trained with $\texttt{trainDF2}$, which excludes Burnside and Fuller Park.
+\item[$\color{red}{\text{(12-15)}}$]
+  The function $\texttt{ModAccLaTeX()}$, defined in the script file $\texttt{MyFunctions.R}$,
+  computes the accuracy statistics (MAE, MSE, RMSE, MAPE) for a list of models; 
+  statistics are computed for both the training set and test set. 
+\end{enumerate}
+
+\newpage
+
+### $\underline{\textsf{Accuracy Plots}}$ \vspace{-2mm} 
+\small
+```{r}
+Labs1 <- c("FM1", "M1", "M2", "M3", "OM1")
+Labs2 <- c("FM2", "H1", "H2", "H3", "OM2")
+AllLabs <- c("FM1", "FM2", "M1", "M2", "M3", "H1", "H2", "H3", "OM1", "OM2")
+  
+AccDF1 <- rbind(ModAcc(ListOfModels = Models1, VectorOfLabels = Labs1, TrainSet = trainDF1, TestSet = testDF1),
+                ModAcc(ListOfModels = Models2, VectorOfLabels = Labs2, TrainSet = trainDF2, TestSet = testDF1)) %>% 
+  arrange(factor(Model, levels = AllLabs))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$]
+  This chunk performs generates a similar output as the previous chunk in $\texttt{Section 5.2.1}$ except it does not apply \LaTeX\ formatting.
+\item[$\color{red}{\text{(5-6)}}$]
+  The function $\texttt{ModAcc()}$ is defined in the script file $\texttt{MyFunctions.R}$.
+  As mentioned, $\texttt{ModAcc()}$ and $\texttt{ModAccLaTeX()}$ are similar functions except $\texttt{ModAcc()}$ does not apply \LaTeX\ formatting.
+  By not applying \LaTeX\ formatting, numeric values are interpreted as numerically; 
+  in contrast, numeric values were interpreted as strings in the previous section.
+  In order to generate useful plots, it is necessary that values are interpreted numerically.
+\end{enumerate}
+
+
+\small
+```{r}
+TrainAccDF <- select(AccDF1, c(1,2, grep(pattern = "Training", names(AccDF1)))) %>%
+  pivot_longer(cols = 3:6, names_to = "Statistic", values_to = "Value") %>%
+  mutate(Statistic = gsub(x = Statistic, pattern = "Training ", replacement = "")) %>%
+  mutate(Model = factor(Model, levels = AllLabs),
+         Statistic = factor(Statistic, levels = c("MAE", "MSE", "RMSE", "MAPE")))
+```
+\normalsize\vspace{-5mm}
+
+\begin{enumerate}
+\item[$\vphantom{)}$]
+  The data is prepared for plotting.
+\item[$\color{red}{(1)}$]
+  $\texttt{grep}$ returns all indices that contain the string ``Training"
+\item[$\color{red}{(3)}$]
+  $\texttt{gsub}$ removes the word ``Training" from the names of each statistic. 
+  For instance, Training MSE becomes just MSE.
+\item[$\color{red}{\text{(4-5)}}$]
+  The Model and Statistic variables/columns are converted to factor variables.
+\end{enumerate}
+
+
+
+#### $\underline{\textbf{Training Set}}$ \vspace{-2mm}
+$~$
+\small
+```{r TrainAccPlot, fig.width=10, fig.height=9}
+ggplot(data = TrainAccDF) +
+  geom_col(aes(x = Statistic, y = Value, fill = Model), 
+           position = "dodge", color ="black") +
+  labs(title = "Performance on the Training Set", x = NULL, y = NULL) + 
+  scale_fill_manual(values = mycolors) +
+  guides(fill = guide_legend(nrow = 1, label.position = "top", 
+                             label.theme = element_text(family = "Courier", face = "bold", hjust = 0.5) )) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", family = "Courier", size = rel(2.25)), 
+        panel.grid.major = element_line(color = "gray78"),
+        panel.grid.minor = element_line(color = "gray84"),
+        axis.title.y.left=element_text(size=rel(1.75), face="bold", family="sans", margin=margin(t=0, r=8, b=0, l=3)),
+        axis.title.x.bottom=element_text(size=rel(1.75), face="bold", family="sans", margin=margin(t=8, r=0, b=3, l=0)),
+        axis.text = element_text(size = rel(1.5), face = "bold", family = "Courier"),
+        legend.position = "bottom",
+        legend.background = element_rect(color = "Black", fill = "gray90"),
+        legend.key.width = unit(1, "cm"),
+        legend.text = element_text(size=rel(1.75), face="bold", family="Courier", margin=margin(t=0, r=8, b=0, l=3)),
+        legend.key = element_rect(fill = "White", color = "Black"),
+        legend.title = element_blank())
+```
+\normalsize\vspace{-5mm}
+
+
+\begin{enumerate}
+\item[$\color{red}{(2)}$] 
+  $\texttt{fill = Model}$: Each column represents a model.
+\item[$\color{red}{(3)}$] 
+  $\texttt{position = "dodge"}$: For each $x$-value, column for different modes are placed next to each other rather than on top of each other.
+\end{enumerate}
